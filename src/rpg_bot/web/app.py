@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Generator
 
 import gradio as gr
@@ -13,8 +14,6 @@ from rpg_bot.retrieval.store import VectorStore
 def _get_game_systems() -> list[str]:
     try:
         store = VectorStore()
-        sources = store.list_sources()
-        # Extract unique game systems from metadata
         results = store.collection.get(include=["metadatas"], limit=10000)
         systems = set()
         for meta in results.get("metadatas", []):
@@ -23,6 +22,38 @@ def _get_game_systems() -> list[str]:
         return ["(all)"] + sorted(systems)
     except Exception:
         return ["(all)"]
+
+
+def _get_source_paths() -> list[str]:
+    """Get all unique source PDF paths for Gradio's allowed_paths."""
+    try:
+        store = VectorStore()
+        results = store.collection.get(include=["metadatas"], limit=10000)
+        paths = set()
+        for meta in results.get("metadatas", []):
+            if meta and meta.get("source_path"):
+                paths.add(meta["source_path"])
+        return sorted(paths)
+    except Exception:
+        return []
+
+
+_CITATION_RE = re.compile(r"\[([^]]+?,\s*p\.\s*(\d+))\]")
+
+
+def _linkify_citations(text: str, source_map: dict[str, str]) -> str:
+    """Replace [Book, p.XX] citations with markdown links to the PDF."""
+    if not source_map:
+        return text
+
+    def _replace(match: re.Match) -> str:
+        citation_key = match.group(1)
+        url = source_map.get(citation_key, "")
+        if url:
+            return f"[{citation_key}]({url})"
+        return match.group(0)
+
+    return _CITATION_RE.sub(_replace, text)
 
 
 def _chat_response(
@@ -44,21 +75,26 @@ def _chat_response(
     # RAG retrieval
     system_filter = game_system if game_system != "(all)" else None
     context = None
+    source_map: dict[str, str] = {}
     try:
-        context = query_rag(user_text, game_system=system_filter)
+        rag_result = query_rag(user_text, game_system=system_filter)
+        if rag_result is not None:
+            context = rag_result.context
+            source_map = rag_result.source_map
     except Exception:
         pass
 
-    # Stream response
+    # Stream response, linkify citations in final output
     collected = ""
     for chunk in llm.chat_stream(user_text, context=context):
         collected += chunk
-        yield collected
+        yield _linkify_citations(collected, source_map)
 
 
 def launch_app() -> None:
     settings = get_settings()
     game_systems = _get_game_systems()
+    allowed_paths = _get_source_paths()
 
     with gr.Blocks(title="RPG Support Bot") as demo:
         gr.Markdown("# RPG Support Bot\nAsk questions about RPG rules, world building, characters, and more.")
@@ -79,4 +115,5 @@ def launch_app() -> None:
     demo.launch(
         server_port=settings.web.server_port,
         share=settings.web.share,
+        allowed_paths=allowed_paths,
     )

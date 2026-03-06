@@ -5,7 +5,7 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 ## Features
 
 - **PDF ingestion pipeline** -- extracts text from RPG source books (multi-column, headings, stat blocks), chunks intelligently, and embeds into a local vector database
-- **RAG retrieval** -- finds relevant passages from your source books and provides them as context to Claude
+- **RAG retrieval** -- finds relevant passages from your source books and provides them as context to the LLM
 - **Cited answers** -- every answer references `[Book Name, p.XX]` so you can verify
 - **Multilingual** -- works with English and German source books; responds in the user's language
 - **Game system filtering** -- organize books by system and filter queries accordingly
@@ -15,7 +15,9 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
 - [LM Studio](https://lmstudio.ai/) running locally with an embedding model loaded (default: `text-embedding-nomic-embed-text-v1.5`)
-- An [Anthropic API key](https://console.anthropic.com/) for Claude
+- One of the following for the LLM:
+  - An [Anthropic API key](https://console.anthropic.com/) for Claude (default), **or**
+  - A local model served via LM Studio, [Ollama](https://ollama.com/), or any OpenAI-compatible API
 
 ## Setup
 
@@ -23,7 +25,7 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 # Clone and enter the project
 cd rpg-support-bot
 
-# Copy the environment file and add your API key
+# Copy the environment file and add your API key (only needed for Anthropic backend)
 cp .env.example .env
 # Edit .env and set ANTHROPIC_API_KEY=sk-ant-...
 
@@ -109,9 +111,11 @@ All settings are in `config.yaml`:
 
 ```yaml
 llm:
+  backend: "anthropic"           # "anthropic" or "openai"
   model: "claude-sonnet-4-20250514"
   max_tokens: 4096
   temperature: 0.3
+  # base_url: "http://localhost:1234/v1"  # only used with "openai" backend
 
 embeddings:
   model: "text-embedding-nomic-embed-text-v1.5"
@@ -129,6 +133,24 @@ chromadb:
   persist_directory: "data/chromadb"
   collection_name: "rpg_sourcebooks"
 ```
+
+### Using a local LLM
+
+Set `backend: "openai"` and point `base_url` at your local server:
+
+```yaml
+llm:
+  backend: "openai"
+  model: "qwen3-32b"                      # model name as shown in your server
+  max_tokens: 4096
+  temperature: 0.3
+  base_url: "http://localhost:1234/v1"     # LM Studio
+  # base_url: "http://localhost:11434/v1"  # Ollama
+```
+
+No API key is needed for local models.
+
+### Secrets
 
 Secrets go in `.env` (not committed):
 
@@ -149,8 +171,8 @@ User question
   -> Embed query (LM Studio API)
   -> Retrieve top-k chunks from ChromaDB
   -> Format as numbered context with source attribution
-  -> Send to Claude with system prompt + context
+  -> Send to LLM (Claude API or local model) with system prompt + context
   -> Stream cited answer back to user
 ```
 
-Both CLI and Web UI share the same retrieval and LLM backend. Source books are stored in a single ChromaDB collection with metadata filtering for game system, language, page number, and section.
+Both CLI and Web UI share the same retrieval and LLM backend. The LLM client supports Anthropic's API and any OpenAI-compatible endpoint (LM Studio, Ollama, etc.), switchable via `config.yaml`. Source books are stored in a single ChromaDB collection with metadata filtering for game system, language, page number, and section.

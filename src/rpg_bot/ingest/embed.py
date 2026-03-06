@@ -46,6 +46,7 @@ def ingest_pdf(pdf_path: Path, store: VectorStore) -> int:
         return 0
 
     source_name = pdf_path.stem
+    source_path = str(pdf_path.resolve())
     game_system = _guess_game_system(pdf_path)
 
     console.print(f"[bold]Extracting:[/bold] {pdf_path.name}")
@@ -56,7 +57,7 @@ def ingest_pdf(pdf_path: Path, store: VectorStore) -> int:
 
     console.print(f"  {len(pages)} pages extracted")
 
-    chunks = chunk_pages(pages, source_name=source_name, game_system=game_system)
+    chunks = chunk_pages(pages, source_name=source_name, game_system=game_system, source_path=source_path)
     console.print(f"  {len(chunks)} chunks created")
 
     if not chunks:

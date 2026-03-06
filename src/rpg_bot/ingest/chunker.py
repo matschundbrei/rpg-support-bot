@@ -104,6 +104,7 @@ def chunk_pages(
     pages: list[PageContent],
     source_name: str,
     game_system: str = "",
+    source_path: str = "",
 ) -> list[Chunk]:
     """Chunk extracted pages into retrieval-ready chunks with metadata."""
     settings = get_settings()
@@ -135,6 +136,7 @@ def chunk_pages(
                 text=chunk_text,
                 metadata={
                     "source": source_name,
+                    "source_path": source_path,
                     "page": page.page_number,
                     "game_system": game_system,
                     "language": language,

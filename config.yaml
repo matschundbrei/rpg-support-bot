@@ -1,7 +1,11 @@
 llm:
+  # backend: "anthropic" or "openai" (for LM Studio / ollama / any OpenAI-compatible API)
+  backend: "anthropic"
   model: "claude-sonnet-4-20250514"
   max_tokens: 4096
   temperature: 0.3
+  # base_url: only used with "openai" backend (e.g. "http://localhost:1234/v1")
+  # base_url: "http://localhost:1234/v1"
 
 embeddings:
   model: "text-embedding-nomic-embed-text-v1.5"

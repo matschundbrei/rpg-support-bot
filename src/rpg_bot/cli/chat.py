@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import re
+
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.text import Text
 
 from rpg_bot.llm.client import LLMClient
 
@@ -24,6 +27,32 @@ def _print_welcome() -> None:
     )
 
 
+_CITATION_RE = re.compile(r"\[([^]]+?,\s*p\.\s*\d+)\]")
+
+
+def _render_citations(text: str, source_map: dict[str, str]) -> Text:
+    """Convert citation patterns like [Book, p.42] into clickable terminal links."""
+    rich_text = Text()
+    last_end = 0
+
+    for match in _CITATION_RE.finditer(text):
+        # Add text before the citation
+        rich_text.append(text[last_end:match.start()])
+
+        citation_key = match.group(1)
+        url = source_map.get(citation_key, "")
+
+        if url:
+            rich_text.append(f"[{citation_key}]", style=f"link {url} bold cyan")
+        else:
+            rich_text.append(f"[{citation_key}]", style="bold cyan")
+
+        last_end = match.end()
+
+    rich_text.append(text[last_end:])
+    return rich_text
+
+
 def run_chat(
     query_fn: callable | None = None,
     game_system: str | None = None,
@@ -31,7 +60,7 @@ def run_chat(
     """Run the interactive CLI chat loop.
 
     Args:
-        query_fn: Optional RAG query function (user_query, game_system) -> context string.
+        query_fn: Optional RAG query function (user_query, game_system) -> RAGResult.
         game_system: Optional game system filter for RAG queries.
     """
     _print_welcome()
@@ -78,13 +107,17 @@ def run_chat(
 
         # RAG context retrieval
         context = None
+        source_map: dict[str, str] = {}
         if query_fn is not None:
             try:
-                context = query_fn(user_input, current_system)
+                rag_result = query_fn(user_input, current_system)
+                if rag_result is not None:
+                    context = rag_result.context
+                    source_map = rag_result.source_map
             except Exception as e:
                 console.print(f"[yellow]RAG retrieval failed: {e}[/yellow]")
 
-        # Stream LLM response
+        # Stream LLM response with live markdown preview
         console.print()
         collected = ""
         try:
@@ -92,6 +125,11 @@ def run_chat(
                 for chunk in llm.chat_stream(user_input, context=context):
                     collected += chunk
                     live.update(Markdown(collected))
+
+            # Re-render final response with clickable citation links
+            if source_map:
+                console.print()
+                console.print(_render_citations(collected, source_map))
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
             # Remove the failed user message from history

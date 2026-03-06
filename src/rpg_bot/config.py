@@ -22,9 +22,11 @@ _yaml = _load_yaml_config()
 
 
 class LLMConfig(BaseSettings):
+    backend: str = _yaml.get("llm", {}).get("backend", "anthropic")
     model: str = _yaml.get("llm", {}).get("model", "claude-sonnet-4-20250514")
     max_tokens: int = _yaml.get("llm", {}).get("max_tokens", 4096)
     temperature: float = _yaml.get("llm", {}).get("temperature", 0.3)
+    base_url: str = _yaml.get("llm", {}).get("base_url", "http://localhost:1234/v1")
 
 
 class EmbeddingsConfig(BaseSettings):
