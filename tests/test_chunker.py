@@ -68,4 +68,4 @@ def test_chunk_pages_breadcrumb():
     ]
     chunks = chunk_pages(pages, source_name="PHB")
     assert chunks
-    assert "PHB > Combat > Opportunity Attacks" in chunks[0].text
+    assert "PHB > Opportunity Attacks" in chunks[0].text

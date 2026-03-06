@@ -13,23 +13,6 @@ class Chunk:
     metadata: dict[str, str | int] = field(default_factory=dict)
 
 
-# Patterns that indicate section boundaries in RPG books
-_SECTION_PATTERNS = [
-    re.compile(r"^#{1,3}\s+", re.MULTILINE),  # Markdown-style
-    re.compile(r"^(?:Chapter|Part|Section|Kapitel|Teil|Abschnitt)\s+\d", re.MULTILINE | re.IGNORECASE),
-    re.compile(r"^[A-Z][A-Z\s]{4,}$", re.MULTILINE),  # ALL CAPS headings
-]
-
-# Patterns for atomic RPG content that should not be split
-_STAT_BLOCK_START = re.compile(
-    r"(?:^|\n)(?:"
-    r"(?:Armor Class|Hit Points|Speed|STR|DEX|CON|INT|WIS|CHA)"
-    r"|(?:Rüstungsklasse|Trefferpunkte|Bewegungsrate)"
-    r")",
-    re.IGNORECASE,
-)
-
-
 def _detect_language(text: str) -> str:
     try:
         from langdetect import detect
@@ -38,16 +21,10 @@ def _detect_language(text: str) -> str:
         return "en"
 
 
-def _build_breadcrumb(headings: list[str], source_name: str) -> str:
-    parts = [source_name]
-    # Take last 2 unique headings as breadcrumb path
-    seen = set()
-    for h in headings[-2:]:
-        h_clean = h.strip()
-        if h_clean and h_clean.lower() not in seen:
-            seen.add(h_clean.lower())
-            parts.append(h_clean)
-    return " > ".join(parts)
+def _build_breadcrumb(heading: str, source_name: str) -> str:
+    if heading:
+        return f"{source_name} > {heading}"
+    return source_name
 
 
 def _split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
@@ -55,8 +32,6 @@ def _split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     if len(text) <= chunk_size:
         return [text] if text.strip() else []
 
-    chunks: list[str] = []
-    # Try splitting on paragraph breaks first, then sentences, then hard split
     separators = ["\n\n", "\n", ". ", " "]
 
     def _do_split(t: str, sep_idx: int = 0) -> list[str]:
@@ -86,11 +61,11 @@ def _split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     raw_chunks = _do_split(text)
 
     # Apply overlap
+    chunks: list[str] = []
     for i, chunk in enumerate(raw_chunks):
         if i > 0 and overlap > 0:
             prev = raw_chunks[i - 1]
             overlap_text = prev[-overlap:] if len(prev) > overlap else prev
-            # Find a clean break point in the overlap
             space_idx = overlap_text.find(" ")
             if space_idx > 0:
                 overlap_text = overlap_text[space_idx + 1:]
@@ -98,6 +73,57 @@ def _split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
         chunks.append(chunk.strip())
 
     return [c for c in chunks if c]
+
+
+_MIN_SECTION_SIZE = 150
+
+
+def _split_into_sections(
+    text: str, headings: list[str]
+) -> list[tuple[str, str]]:
+    """Split page text at heading boundaries.
+
+    Returns list of (heading, section_text) tuples. Merges tiny sections
+    with the next section to avoid chunks too small for good embeddings.
+    """
+    # Find heading positions (must appear at start of a line)
+    positions: list[tuple[int, str]] = []
+    for heading in headings:
+        pattern = re.compile(
+            r"^" + re.escape(heading) + r"\s*$", re.MULTILINE
+        )
+        match = pattern.search(text)
+        if match and match.start() not in {p for p, _ in positions}:
+            positions.append((match.start(), heading))
+
+    if not positions:
+        return [("", text)]
+
+    positions.sort(key=lambda x: x[0])
+
+    # Build raw sections
+    raw: list[tuple[str, str]] = []
+    pre_text = text[: positions[0][0]].strip()
+    if pre_text:
+        raw.append(("", pre_text))
+
+    for i, (pos, heading) in enumerate(positions):
+        end = positions[i + 1][0] if i + 1 < len(positions) else len(text)
+        section_text = text[pos:end].strip()
+        if section_text:
+            raw.append((heading, section_text))
+
+    # Merge tiny sections into their predecessor to avoid polluting
+    # the next section's heading/embedding context
+    merged: list[tuple[str, str]] = []
+    for heading, section_text in raw:
+        if merged and len(section_text) < _MIN_SECTION_SIZE:
+            prev_h, prev_t = merged[-1]
+            merged[-1] = (prev_h, prev_t + "\n\n" + section_text)
+        else:
+            merged.append((heading, section_text))
+
+    return merged
 
 
 def chunk_pages(
@@ -116,33 +142,37 @@ def chunk_pages(
     language = _detect_language(sample_text)
 
     all_chunks: list[Chunk] = []
-    active_headings: list[str] = []
 
     for page in pages:
-        # Update heading context
-        if page.headings:
-            active_headings = page.headings
+        sections = _split_into_sections(page.text, page.headings)
 
-        breadcrumb = _build_breadcrumb(active_headings, source_name)
+        # Fallback heading when no headings were found in the text
+        fallback_heading = page.headings[-1] if page.headings else ""
 
-        # Split page text into chunks
-        text_chunks = _split_text(page.text, chunk_size, overlap)
+        for section_heading, section_text in sections:
+            heading = section_heading or fallback_heading
+            breadcrumb = _build_breadcrumb(heading, source_name)
 
-        for text in text_chunks:
-            # Prepend breadcrumb for context
-            chunk_text = f"[{breadcrumb}]\n{text}"
+            # Split large sections further; keep small ones as-is
+            if len(section_text) <= chunk_size:
+                text_chunks = [section_text]
+            else:
+                text_chunks = _split_text(section_text, chunk_size, overlap)
 
-            all_chunks.append(Chunk(
-                text=chunk_text,
-                metadata={
-                    "source": source_name,
-                    "source_path": source_path,
-                    "page": page.page_number,
-                    "game_system": game_system,
-                    "language": language,
-                    "section": active_headings[-1] if active_headings else "",
-                    "breadcrumb": breadcrumb,
-                },
-            ))
+            for text in text_chunks:
+                chunk_text = f"[{breadcrumb}]\n{text}"
+
+                all_chunks.append(Chunk(
+                    text=chunk_text,
+                    metadata={
+                        "source": source_name,
+                        "source_path": source_path,
+                        "page": page.page_number,
+                        "game_system": game_system,
+                        "language": language,
+                        "section": section_heading,
+                        "breadcrumb": breadcrumb,
+                    },
+                ))
 
     return all_chunks
