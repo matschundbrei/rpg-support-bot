@@ -24,7 +24,8 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 
 ```bash
 # Clone and enter the project
-cd rpg-support-bot
+git clone https://codeberg.org/maub/rpg-bot.git
+cd rpg-bot
 
 # Copy the environment file and add your API key(s)
 cp .env.example .env
@@ -140,7 +141,7 @@ chromadb:
 
 ### Using the OpenAI API
 
-Set `backend: "openai"` and add your key to `.env`. Leave `base_url` empty to use the real OpenAI API:
+Set `backend: "openai"` and add your key to `.env`. Leave `base_url` empty to use the OpenAI default API (api.openai.com/v1):
 
 ```yaml
 llm:
@@ -185,13 +186,37 @@ uv run pytest
 
 ## Architecture
 
+### Pipeline
+
+```
+PDF source books
+  -> Extract text per page (PyMuPDF, multi-column aware)
+  -> Detect headings by font size heuristics
+  -> Split pages into sections at heading boundaries
+  -> Chunk sections with recursive character splitter + overlap
+  -> Prepend breadcrumb context ([Source > Section]) to each chunk
+  -> Embed chunks via OpenAI-compatible API (batches of 64)
+  -> Store in ChromaDB with metadata (source, page, game system, language, section)
+```
+
 ```
 User question
-  -> Embed query (LM Studio API)
-  -> Retrieve top-k chunks from ChromaDB
+  -> Embed query via OpenAI-compatible API
+  -> Vector similarity search (top-k × 3 candidates)
+  -> BM25 keyword search over full corpus (top-k × 3 candidates)
+  -> Reciprocal Rank Fusion to merge both rankings
+  -> Deduplicate and threshold-filter to final top-k
   -> Format as numbered context with source attribution
-  -> Send to LLM (Claude API or local model) with system prompt + context
+  -> Send to LLM (Anthropic or OpenAI-compatible) with system prompt + context
   -> Stream cited answer back to user
 ```
 
-Both CLI and Web UI share the same retrieval and LLM backend. The LLM client supports Anthropic's API and any OpenAI-compatible endpoint (LM Studio, Ollama, etc.), switchable via `config.yaml`. Source books are stored in a single ChromaDB collection with metadata filtering for game system, language, page number, and section.
+### Key components
+
+- **PDF extraction** (`ingest/extract.py`) -- uses `get_text("text")` for content (handles multi-column layouts correctly) and `get_text("dict")` only for heading detection. Deduplicates layered PDF text.
+- **Section-aware chunking** (`ingest/chunker.py`) -- splits page text at detected heading boundaries so each spell, item, or rule gets its own chunk. Small sections (<150 chars) merge into their predecessor.
+- **Hybrid retrieval** (`retrieval/query.py`) -- combines vector similarity with BM25 keyword matching via Reciprocal Rank Fusion (RRF). Keyword matches bypass the distance threshold, so exact term matches always surface.
+- **Dual LLM backend** (`llm/client.py`) -- Anthropic SDK or OpenAI SDK, switchable via `config.yaml`. Supports streaming.
+- **Embeddings** (`embeddings.py`) -- calls any OpenAI-compatible `/v1/embeddings` endpoint. Works with LM Studio, Ollama, or the real OpenAI API.
+
+Both CLI and Web UI share the same retrieval and LLM backend. Source books are stored in a single ChromaDB collection with metadata filtering for game system, language, page number, and section.
