@@ -26,27 +26,32 @@ def _get_game_systems() -> list[str]:
 
 
 def _chat_response(
-    message: str,
+    message: dict,
     history: list[dict[str, str]],
     game_system: str,
 ) -> Generator[str, None, None]:
+    user_text = message.get("text", "") if isinstance(message, dict) else str(message)
+
     llm = LLMClient()
 
     # Restore conversation history
     for msg in history:
-        llm.history.append({"role": msg["role"], "content": msg["content"]})
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role in ("user", "assistant") and content:
+            llm.history.append({"role": role, "content": content})
 
     # RAG retrieval
     system_filter = game_system if game_system != "(all)" else None
     context = None
     try:
-        context = query_rag(message, game_system=system_filter)
+        context = query_rag(user_text, game_system=system_filter)
     except Exception:
         pass
 
     # Stream response
     collected = ""
-    for chunk in llm.chat_stream(message, context=context):
+    for chunk in llm.chat_stream(user_text, context=context):
         collected += chunk
         yield collected
 
@@ -68,7 +73,6 @@ def launch_app() -> None:
 
         gr.ChatInterface(
             fn=_chat_response,
-            type="messages",
             additional_inputs=[system_dropdown],
         )
 
