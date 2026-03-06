@@ -22,9 +22,12 @@ class LLMClient:
         elif self.backend == "openai":
             from openai import OpenAI
 
+            kwargs = {}
+            if settings.llm.base_url:
+                kwargs["base_url"] = settings.llm.base_url
             self.client = OpenAI(
-                base_url=settings.llm.base_url,
-                api_key="lm-studio",
+                api_key=settings.openai_api_key or "no-key-required",
+                **kwargs,
             )
         else:
             raise ValueError(f"Unknown LLM backend: {self.backend!r}")

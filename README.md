@@ -17,6 +17,7 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 - A local embedding model served via [LM Studio](https://lmstudio.ai/), [Ollama](https://ollama.com/), or any OpenAI-compatible API (default model: `nomic-embed-text-v1.5`)
 - One of the following for the LLM:
   - An [Anthropic API key](https://console.anthropic.com/) for Claude (default), **or**
+  - An [OpenAI API key](https://platform.openai.com/api-keys) for GPT models, **or**
   - A local model served via LM Studio, [Ollama](https://ollama.com/), or any OpenAI-compatible API
 
 ## Setup
@@ -25,9 +26,9 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 # Clone and enter the project
 cd rpg-support-bot
 
-# Copy the environment file and add your API key (only needed for Anthropic backend)
+# Copy the environment file and add your API key(s)
 cp .env.example .env
-# Edit .env and set ANTHROPIC_API_KEY=sk-ant-...
+# Edit .env and set ANTHROPIC_API_KEY and/or OPENAI_API_KEY
 
 # Install dependencies
 uv sync
@@ -137,6 +138,20 @@ chromadb:
   collection_name: "rpg_sourcebooks"
 ```
 
+### Using the OpenAI API
+
+Set `backend: "openai"` and add your key to `.env`. Leave `base_url` empty to use the real OpenAI API:
+
+```yaml
+llm:
+  backend: "openai"
+  model: "gpt-4o"
+  max_tokens: 4096
+  temperature: 0.3
+```
+
+You can also use OpenAI for embeddings by setting `embeddings.base_url` to empty and choosing a model like `text-embedding-3-small`.
+
 ### Using a local LLM
 
 Set `backend: "openai"` and point `base_url` at your local server:
@@ -159,6 +174,7 @@ Secrets go in `.env` (not committed):
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
 ```
 
 ## Running Tests

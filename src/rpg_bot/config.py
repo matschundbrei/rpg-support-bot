@@ -26,7 +26,7 @@ class LLMConfig(BaseSettings):
     model: str = _yaml.get("llm", {}).get("model", "claude-sonnet-4-20250514")
     max_tokens: int = _yaml.get("llm", {}).get("max_tokens", 4096)
     temperature: float = _yaml.get("llm", {}).get("temperature", 0.3)
-    base_url: str = _yaml.get("llm", {}).get("base_url", "http://localhost:1234/v1")
+    base_url: str = _yaml.get("llm", {}).get("base_url", "")
 
 
 class EmbeddingsConfig(BaseSettings):
@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     )
 
     anthropic_api_key: str = Field(default="")
+    openai_api_key: str = Field(default="")
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)

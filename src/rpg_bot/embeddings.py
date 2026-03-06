@@ -11,10 +11,13 @@ def _get_client() -> OpenAI:
     global _client
     if _client is None:
         settings = get_settings()
+        kwargs = {}
+        if settings.embeddings.base_url:
+            kwargs["base_url"] = settings.embeddings.base_url
         _client = OpenAI(
-            base_url=settings.embeddings.base_url,
-            api_key="no-key-required",
+            api_key=settings.openai_api_key or "no-key-required",
             timeout=120.0,
+            **kwargs,
         )
     return _client
 
