@@ -1,0 +1,26 @@
+llm:
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 4096
+  temperature: 0.3
+
+embeddings:
+  model: "text-embedding-nomic-embed-text-v1.5"
+  base_url: "http://localhost:1234"
+
+chunking:
+  chunk_size: 1500
+  chunk_overlap: 200
+
+retrieval:
+  top_k: 15
+  relevance_threshold: 1.0
+
+chromadb:
+  persist_directory: "data/chromadb"
+  collection_name: "rpg_sourcebooks"
+
+sourcebooks_directory: "sourcebooks"
+
+web:
+  server_port: 7860
+  share: false
