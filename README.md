@@ -14,7 +14,7 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
-- [LM Studio](https://lmstudio.ai/) running locally with an embedding model loaded (default: `text-embedding-nomic-embed-text-v1.5`)
+- A local embedding model served via [LM Studio](https://lmstudio.ai/), [Ollama](https://ollama.com/), or any OpenAI-compatible API (default model: `nomic-embed-text-v1.5`)
 - One of the following for the LLM:
   - An [Anthropic API key](https://console.anthropic.com/) for Claude (default), **or**
   - A local model served via LM Studio, [Ollama](https://ollama.com/), or any OpenAI-compatible API
@@ -33,15 +33,18 @@ cp .env.example .env
 uv sync
 ```
 
-### LM Studio
+### Embedding Model
 
-Start LM Studio and load an embedding model. The default config expects `text-embedding-nomic-embed-text-v1.5` on `http://localhost:1234`. You can change this in `config.yaml`:
+Start LM Studio (or Ollama) and load an embedding model. The default config expects `text-embedding-nomic-embed-text-v1.5` on `http://localhost:1234`. Any server with an OpenAI-compatible `/v1/embeddings` endpoint works:
 
 ```yaml
 embeddings:
   model: "text-embedding-nomic-embed-text-v1.5"
-  base_url: "http://localhost:1234"
+  base_url: "http://localhost:1234/v1"     # LM Studio
+  # base_url: "http://localhost:11434/v1"  # Ollama
 ```
+
+For Ollama, pull the model first: `ollama pull nomic-embed-text`
 
 ## Adding Source Books
 
@@ -119,7 +122,7 @@ llm:
 
 embeddings:
   model: "text-embedding-nomic-embed-text-v1.5"
-  base_url: "http://localhost:1234"
+  base_url: "http://localhost:1234/v1"
 
 chunking:
   chunk_size: 1500

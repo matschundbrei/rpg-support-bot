@@ -34,7 +34,7 @@ class EmbeddingsConfig(BaseSettings):
         "model", "text-embedding-nomic-embed-text-v1.5"
     )
     base_url: str = _yaml.get("embeddings", {}).get(
-        "base_url", "http://localhost:1234"
+        "base_url", "http://localhost:1234/v1"
     )
 
 
