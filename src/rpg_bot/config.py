@@ -66,6 +66,12 @@ class ChromaDBConfig(BaseSettings):
         return path
 
 
+class STTConfig(BaseSettings):
+    enabled: bool = _yaml.get("stt", {}).get("enabled", False)
+    model: str = _yaml.get("stt", {}).get("model", "whisper-1")
+    base_url: str = _yaml.get("stt", {}).get("base_url", "")
+
+
 class WebConfig(BaseSettings):
     server_port: int = _yaml.get("web", {}).get("server_port", 7860)
     share: bool = _yaml.get("web", {}).get("share", False)
@@ -86,6 +92,7 @@ class Settings(BaseSettings):
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     chromadb: ChromaDBConfig = Field(default_factory=ChromaDBConfig)
+    stt: STTConfig = Field(default_factory=STTConfig)
     web: WebConfig = Field(default_factory=WebConfig)
 
     sourcebooks_directory: str = _yaml.get("sourcebooks_directory", "sourcebooks")

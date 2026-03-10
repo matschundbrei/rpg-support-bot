@@ -27,6 +27,14 @@ chromadb:
 
 sourcebooks_directory: "sourcebooks"
 
+stt:
+  # Speech-to-text via OpenAI-compatible /v1/audio/transcriptions endpoint (Whisper)
+  enabled: false
+  model: "whisper-1"
+  # base_url: set for local servers, omit or leave empty for real OpenAI API
+  # base_url: "http://localhost:1234/v1"   # LM Studio
+  # base_url: "http://localhost:11434/v1"  # Ollama
+
 web:
   server_port: 7860
   share: false
