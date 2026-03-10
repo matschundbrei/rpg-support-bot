@@ -68,8 +68,9 @@ class ChromaDBConfig(BaseSettings):
 
 class STTConfig(BaseSettings):
     enabled: bool = _yaml.get("stt", {}).get("enabled", False)
+    backend: str = _yaml.get("stt", {}).get("backend", "whisper-cpp")
     model: str = _yaml.get("stt", {}).get("model", "whisper-1")
-    base_url: str = _yaml.get("stt", {}).get("base_url", "")
+    base_url: str = _yaml.get("stt", {}).get("base_url", "http://localhost:8080")
 
 
 class WebConfig(BaseSettings):

@@ -60,8 +60,28 @@ def _linkify_citations(text: str, source_map: dict[str, str]) -> str:
 
 
 def _transcribe_audio(audio_path: str) -> str:
-    """Transcribe audio file using an OpenAI-compatible Whisper endpoint."""
+    """Transcribe audio via whisper.cpp server or any OpenAI-compatible endpoint."""
     settings = get_settings()
+
+    if settings.stt.backend == "whisper-cpp":
+        import httpx
+
+        url = f"{settings.stt.base_url.rstrip('/')}/inference"
+        with open(audio_path, "rb") as f:
+            resp = httpx.post(
+                url,
+                files={"file": ("audio.wav", f, "audio/wav")},
+                data={
+                    "temperature": "0.0",
+                    "temperature_inc": "0.2",
+                    "response_format": "json",
+                },
+                timeout=30.0,
+            )
+        resp.raise_for_status()
+        return resp.json()["text"]
+
+    # OpenAI-compatible backend (openai API, faster-whisper-server, ollama, etc.)
     from openai import OpenAI
 
     client_kwargs: dict = {"api_key": settings.openai_api_key or "not-needed"}
