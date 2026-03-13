@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Generator
 
@@ -9,6 +10,8 @@ from rpg_bot.config import get_settings
 from rpg_bot.llm.client import LLMClient
 from rpg_bot.retrieval.query import query_rag
 from rpg_bot.retrieval.store import VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 def _get_game_systems() -> list[str]:
@@ -56,12 +59,60 @@ def _linkify_citations(text: str, source_map: dict[str, str]) -> str:
     return _CITATION_RE.sub(_replace, text)
 
 
+def _transcribe_audio(audio_path: str) -> str:
+    """Transcribe audio via whisper.cpp server or any OpenAI-compatible endpoint."""
+    settings = get_settings()
+
+    if settings.stt.backend == "whisper-cpp":
+        import httpx
+
+        url = f"{settings.stt.base_url.rstrip('/')}/inference"
+        with open(audio_path, "rb") as f:
+            resp = httpx.post(
+                url,
+                files={"file": ("audio.wav", f, "audio/wav")},
+                data={
+                    "temperature": "0.0",
+                    "temperature_inc": "0.2",
+                    "response_format": "json",
+                },
+                timeout=30.0,
+            )
+        resp.raise_for_status()
+        return resp.json()["text"]
+
+    # OpenAI-compatible backend (openai API, faster-whisper-server, ollama, etc.)
+    from openai import OpenAI
+
+    client_kwargs: dict = {"api_key": settings.openai_api_key or "not-needed"}
+    if settings.stt.base_url:
+        client_kwargs["base_url"] = settings.stt.base_url
+    client = OpenAI(**client_kwargs)
+
+    with open(audio_path, "rb") as f:
+        transcript = client.audio.transcriptions.create(
+            model=settings.stt.model,
+            file=f,
+        )
+    return transcript.text
+
+
 def _chat_response(
     message: dict,
     history: list[dict[str, str]],
     game_system: str,
+    audio: str | None = None,
 ) -> Generator[str, None, None]:
     user_text = message.get("text", "") if isinstance(message, dict) else str(message)
+
+    # Transcribe audio input if provided and no text was typed
+    if audio and not user_text.strip():
+        try:
+            user_text = _transcribe_audio(audio)
+        except Exception:
+            logger.exception("Speech-to-text transcription failed")
+            yield "⚠ Speech-to-text transcription failed. Check your STT configuration."
+            return
 
     llm = LLMClient()
 
@@ -91,74 +142,12 @@ def _chat_response(
         yield _linkify_citations(collected, source_map)
 
 
-_SPEECH_JS = """
-function() {
-    if (document.getElementById('speech-btn')) return;
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    const btn = document.createElement('button');
-    btn.id = 'speech-btn';
-    btn.textContent = '🎤';
-    btn.title = 'Speech to text (click to start, click again to stop)';
-    btn.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;' +
-        'width:48px;height:48px;border-radius:50%;border:none;' +
-        'font-size:24px;cursor:pointer;background:#f0f0f0;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
-
-    let recognition = null;
-    let listening = false;
-
-    btn.onclick = () => {
-        if (listening) {
-            recognition.stop();
-            return;
-        }
-        recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = document.documentElement.lang || navigator.language || 'en';
-
-        const textarea = document.querySelector('textarea');
-        if (!textarea) return;
-        const startValue = textarea.value;
-
-        recognition.onresult = (e) => {
-            let transcript = '';
-            for (let i = 0; i < e.results.length; i++) {
-                transcript += e.results[i][0].transcript;
-            }
-            const nativeSet = Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype, 'value').set;
-            nativeSet.call(textarea, startValue + transcript);
-            textarea.dispatchEvent(new Event('input', {bubbles: true}));
-        };
-        recognition.onstart = () => {
-            listening = true;
-            btn.style.background = '#ff4444';
-            btn.style.color = 'white';
-        };
-        recognition.onend = () => {
-            listening = false;
-            btn.style.background = '#f0f0f0';
-            btn.style.color = 'black';
-        };
-        recognition.onerror = () => {
-            listening = false;
-            btn.style.background = '#f0f0f0';
-            btn.style.color = 'black';
-        };
-        recognition.start();
-    };
-    document.body.appendChild(btn);
-}
-"""
-
-
 def launch_app() -> None:
     settings = get_settings()
     game_systems = _get_game_systems()
     allowed_paths = _get_source_paths()
+
+    stt_enabled = settings.stt.enabled
 
     with gr.Blocks(title="RPG Support Bot") as demo:
         gr.Markdown("# RPG Support Bot\nAsk questions about RPG rules, world building, characters, and more.")
@@ -171,12 +160,19 @@ def launch_app() -> None:
                 scale=1,
             )
 
+        additional_inputs = [system_dropdown]
+        if stt_enabled:
+            audio_input = gr.Audio(
+                sources=["microphone"],
+                type="filepath",
+                label="Voice input (record, then send)",
+            )
+            additional_inputs.append(audio_input)
+
         gr.ChatInterface(
             fn=_chat_response,
-            additional_inputs=[system_dropdown],
+            additional_inputs=additional_inputs,
         )
-
-        demo.load(None, js=_SPEECH_JS)
 
     demo.launch(
         server_port=settings.web.server_port,

@@ -27,6 +27,19 @@ chromadb:
 
 sourcebooks_directory: "sourcebooks"
 
+stt:
+  # Speech-to-text via whisper.cpp server or any OpenAI-compatible Whisper endpoint
+  enabled: false
+  # backend: "whisper-cpp" (default) or "openai" (for OpenAI API, faster-whisper-server, Ollama)
+  backend: "whisper-cpp"
+  model: "whisper-1"
+  # whisper.cpp server default:
+  base_url: "http://localhost:8080"
+  # For OpenAI-compatible backends, set backend: "openai" and:
+  # base_url: "http://localhost:8080/v1"   # faster-whisper-server
+  # base_url: "http://localhost:11434/v1"  # Ollama
+  # base_url: ""                           # real OpenAI API (needs OPENAI_API_KEY)
+
 web:
   server_port: 7860
   share: false

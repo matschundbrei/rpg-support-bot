@@ -10,6 +10,7 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 - **Multilingual** -- works with English and German source books; responds in the user's language
 - **Game system filtering** -- organize books by system and filter queries accordingly
 - **CLI and Web UI** -- interactive terminal chat or Gradio browser interface
+- **Voice input** -- optional speech-to-text via [whisper.cpp](https://github.com/ggerganov/whisper.cpp) server (works in all browsers)
 
 ## Prerequisites
 
@@ -104,6 +105,42 @@ uv run rpg-bot web
 
 Opens a Gradio chat interface at `http://localhost:7860` with a game system dropdown.
 
+#### Voice input (optional)
+
+The web UI supports voice input via a microphone recording button. Audio is transcribed locally using a [whisper.cpp](https://github.com/ggerganov/whisper.cpp) server. To enable it:
+
+1. **Install whisper.cpp** and download a model:
+
+   ```bash
+   # Build from source (macOS with Metal acceleration)
+   git clone https://github.com/ggerganov/whisper.cpp.git
+   cd whisper.cpp
+   cmake -B build
+   cmake --build build --config Release
+
+   # Download a model (medium is a good balance for English + German)
+   ./models/download-ggml-model.sh medium
+   ```
+
+2. **Start the whisper.cpp server:**
+
+   ```bash
+   ./build/bin/whisper-server -m models/ggml-medium.bin -l auto --convert
+   ```
+
+   - `-l auto` detects the spoken language automatically
+   - `--convert` accepts non-WAV audio formats (requires ffmpeg)
+   - Server runs on `http://localhost:8080` by default
+
+3. **Enable STT** in `config.yaml`:
+
+   ```yaml
+   stt:
+     enabled: true
+   ```
+
+In the web UI, a microphone widget will appear. Record your question, then click Send.
+
 ### List ingested books
 
 ```bash
@@ -168,6 +205,23 @@ llm:
 ```
 
 No API key is needed for local models.
+
+### Speech-to-text
+
+Voice input defaults to a local whisper.cpp server. You can also use any OpenAI-compatible transcription endpoint:
+
+```yaml
+stt:
+  enabled: true
+  backend: "whisper-cpp"                   # "whisper-cpp" or "openai"
+  base_url: "http://localhost:8080"        # whisper.cpp server default
+
+  # For OpenAI-compatible backends (faster-whisper-server, Ollama, OpenAI API),
+  # set backend: "openai" and adjust base_url:
+  # backend: "openai"
+  # base_url: ""                           # real OpenAI API (needs OPENAI_API_KEY)
+  # base_url: "http://localhost:8080/v1"   # faster-whisper-server
+```
 
 ### Secrets
 
