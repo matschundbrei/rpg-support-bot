@@ -12,6 +12,15 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 - **CLI and Web UI** -- interactive terminal chat or Gradio browser interface
 - **Voice input** -- optional speech-to-text via [whisper.cpp](https://github.com/ggerganov/whisper.cpp) server (works in all browsers)
 
+## Vibe Code Warning
+
+This repositorys contents are vibe coded with [claude code](/CLAUDE.md) after I've watched a few articles rolling by, claiming that Claude Opus 4.6 "shockingly" good. I have chosen this particular topic,
+because I wanted to do something from scratch, that I've previously attempted mysel but failed miserably to have a somewhat fair albeit very subjective comparsion.
+
+The "wasted hours" counter for me was at about ~60, when I dropped this during my last vacation, this here took me about 6 to 10 hours and approximately 400k tokens.
+
+And I got somewhere. The result is clearly not perfect, but its a lot more "works for me" than what I had before.
+
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
