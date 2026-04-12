@@ -21,10 +21,14 @@ def cmd_ingest(args: argparse.Namespace) -> None:
 def cmd_serve(args: argparse.Namespace) -> None:
     import uvicorn
 
-    from rpg_bot.api.server import app
+    from rpg_bot.api.server import app, configure_cors
+
+    if args.cors_origins:
+        origins = [o.strip() for o in args.cors_origins.split(",")]
+        configure_cors(origins)
 
     host = args.host
-    display_host = "localhost" if host == "0.0.0.0" else host
+    display_host = "localhost" if host in ("0.0.0.0", "127.0.0.1") else host
     print(f"RPG Support Bot running at http://{display_host}:{args.port}")
     print(f"OpenAI-compatible API at http://{display_host}:{args.port}/v1")
     uvicorn.run(app, host=host, port=args.port)
@@ -57,8 +61,9 @@ def main() -> None:
     ingest_p.add_argument("--path", "-p", help="Path to a specific PDF or directory")
 
     serve_p = sub.add_parser("serve", help="Launch web UI and OpenAI-compatible API server")
-    serve_p.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
+    serve_p.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
     serve_p.add_argument("--port", "-p", type=int, default=8000, help="Port (default: 8000)")
+    serve_p.add_argument("--cors-origins", help="Comma-separated list of allowed CORS origins (e.g. 'http://localhost:3000,http://localhost:8080')")
 
     sub.add_parser("list", help="List ingested source books")
 
