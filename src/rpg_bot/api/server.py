@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -19,6 +20,17 @@ from rpg_bot.retrieval.query import query_rag
 from rpg_bot.retrieval.store import VectorStore
 
 app = FastAPI(title="rpg-bot API")
+
+
+def configure_cors(origins: list[str]) -> None:
+    """Enable CORS with the given origin list. Call before server starts."""
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 
 MODEL_ID = "rpg-bot"
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -233,8 +245,11 @@ def list_models():
         {
             "id": MODEL_ID,
             "object": "model",
+            "created": int(time.time()),
             "owned_by": "rpg-bot",
-            "description": f"RPG RAG bot. Game systems: {', '.join(game_systems) or 'none ingested'}",
+            "permission": [],
+            "root": MODEL_ID,
+            "parent": None,
         }
     ]
     return {"object": "list", "data": models}
