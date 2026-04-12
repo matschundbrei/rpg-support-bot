@@ -2,22 +2,26 @@
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
-from collections.abc import AsyncIterator
+from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from rpg_bot.config import get_settings
 from rpg_bot.llm.prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_RAG
+from rpg_bot.persistence import repository as repo
 from rpg_bot.retrieval.query import query_rag
 from rpg_bot.retrieval.store import VectorStore
 
 app = FastAPI(title="rpg-bot API")
 
 MODEL_ID = "rpg-bot"
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 # --- Request / Response schemas (OpenAI-compatible subset) ---
@@ -39,6 +43,20 @@ class ChatCompletionRequest(BaseModel):
         description="Optional RPG game system filter (e.g. 'dnd5e', 'sr6'). "
         "Non-standard field, ignored by generic clients.",
     )
+    chat_id: str | None = Field(
+        None,
+        description="Optional chat ID for persistence. "
+        "Non-standard field, used by the built-in web UI.",
+    )
+
+
+class CreateChatRequest(BaseModel):
+    game_system: str | None = None
+
+
+class UpdateChatRequest(BaseModel):
+    title: str | None = None
+    game_system: str | None = None
 
 
 # --- Helpers ---
@@ -71,6 +89,21 @@ def _get_system_prompt(context: str | None) -> str:
     if context:
         return SYSTEM_PROMPT_WITH_RAG.format(context=context)
     return SYSTEM_PROMPT
+
+
+def _get_game_systems() -> list[str]:
+    """Extract unique game system identifiers from ChromaDB metadata."""
+    try:
+        store = VectorStore()
+        all_meta = store.collection.get(include=["metadatas"])
+        systems = set()
+        for meta in all_meta["metadatas"] or []:
+            gs = meta.get("game_system")
+            if gs:
+                systems.add(gs)
+        return sorted(systems)
+    except Exception:
+        return []
 
 
 def _call_llm_stream(
@@ -122,8 +155,6 @@ def _call_llm_stream(
 
 def _make_chunk_bytes(chunk_id: str, content: str, finish: bool = False) -> bytes:
     """Format a single SSE chunk in OpenAI format."""
-    import json
-
     data = {
         "id": chunk_id,
         "object": "chat.completion.chunk",
@@ -140,30 +171,70 @@ def _make_chunk_bytes(chunk_id: str, content: str, finish: bool = False) -> byte
     return f"data: {json.dumps(data)}\n\n".encode()
 
 
-# --- Endpoints ---
+# --- Web UI ---
+
+
+@app.get("/", include_in_schema=False)
+def serve_index():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+# --- Game Systems ---
+
+
+@app.get("/api/game-systems")
+def get_game_systems():
+    return {"game_systems": _get_game_systems()}
+
+
+# --- Chat CRUD ---
+
+
+@app.get("/api/chats")
+def list_chats():
+    return repo.list_chats()
+
+
+@app.post("/api/chats", status_code=201)
+def create_chat(request: CreateChatRequest):
+    return repo.create_chat(game_system=request.game_system)
+
+
+@app.get("/api/chats/{chat_id}")
+def get_chat(chat_id: str):
+    chat = repo.get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return chat
+
+
+@app.put("/api/chats/{chat_id}")
+def update_chat(chat_id: str, request: UpdateChatRequest):
+    chat = repo.update_chat(chat_id, title=request.title, game_system=request.game_system)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return chat
+
+
+@app.delete("/api/chats/{chat_id}", status_code=204)
+def delete_chat(chat_id: str):
+    if not repo.delete_chat(chat_id):
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+
+# --- OpenAI-compatible endpoints ---
 
 
 @app.get("/v1/models")
 def list_models():
     """Return available models so Open WebUI can discover us."""
-    store = VectorStore()
-    game_systems = set()
-    try:
-        sources = store.list_sources()
-        all_meta = store.collection.get(include=["metadatas"])
-        for meta in all_meta["metadatas"] or []:
-            gs = meta.get("game_system")
-            if gs:
-                game_systems.add(gs)
-    except Exception:
-        pass
-
+    game_systems = _get_game_systems()
     models = [
         {
             "id": MODEL_ID,
             "object": "model",
             "owned_by": "rpg-bot",
-            "description": f"RPG RAG bot. Game systems: {', '.join(sorted(game_systems)) or 'none ingested'}",
+            "description": f"RPG RAG bot. Game systems: {', '.join(game_systems) or 'none ingested'}",
         }
     ]
     return {"object": "list", "data": models}
@@ -182,14 +253,25 @@ def chat_completions(request: ChatCompletionRequest):
     system_prompt = _get_system_prompt(context)
     messages = _build_messages(request, system_prompt)
 
+    # Persist user message if chat_id provided
+    if request.chat_id:
+        repo.add_message(request.chat_id, "user", user_query)
+        repo.auto_title(request.chat_id, user_query)
+
     if request.stream:
         chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        chat_id_for_persist = request.chat_id
 
         def event_stream():
+            full_response = ""
             for text in _call_llm_stream(messages, temperature, max_tokens):
+                full_response += text
                 yield _make_chunk_bytes(chunk_id, text)
             yield _make_chunk_bytes(chunk_id, "", finish=True)
             yield b"data: [DONE]\n\n"
+            # Persist assistant response after streaming completes
+            if chat_id_for_persist:
+                repo.add_message(chat_id_for_persist, "assistant", full_response)
 
         return StreamingResponse(
             event_stream(),
@@ -198,6 +280,11 @@ def chat_completions(request: ChatCompletionRequest):
 
     # Non-streaming: collect full response
     full = "".join(_call_llm_stream(messages, temperature, max_tokens))
+
+    # Persist assistant response
+    if request.chat_id:
+        repo.add_message(request.chat_id, "assistant", full)
+
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
         "object": "chat.completion",
@@ -212,3 +299,7 @@ def chat_completions(request: ChatCompletionRequest):
         ],
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
+
+
+# Mount static files AFTER all routes so they don't shadow API endpoints
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

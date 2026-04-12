@@ -74,7 +74,7 @@ def ingest_pdf(pdf_path: Path, store: VectorStore) -> int:
         console=console,
     ) as progress:
         task = progress.add_task("Embedding chunks...", total=len(texts))
-        batch_size = 64
+        batch_size = 16
         all_embeddings: list[list[float]] = []
 
         for i in range(0, len(texts), batch_size):
