@@ -24,6 +24,16 @@ def cmd_web(args: argparse.Namespace) -> None:
     launch_app()
 
 
+def cmd_serve(args: argparse.Namespace) -> None:
+    import uvicorn
+
+    from rpg_bot.api.server import app
+
+    print(f"Starting rpg-bot API server on {args.host}:{args.port}")
+    print("Connect Open WebUI to: http://{host}:{port}/v1".format(host=args.host, port=args.port))
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
 def cmd_list(args: argparse.Namespace) -> None:
     from rpg_bot.retrieval.store import VectorStore
 
@@ -51,6 +61,11 @@ def main() -> None:
     ingest_p.add_argument("--path", "-p", help="Path to a specific PDF or directory")
 
     sub.add_parser("web", help="Launch Gradio web UI")
+
+    serve_p = sub.add_parser("serve", help="Launch OpenAI-compatible API server")
+    serve_p.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
+    serve_p.add_argument("--port", "-p", type=int, default=8000, help="Port (default: 8000)")
+
     sub.add_parser("list", help="List ingested source books")
 
     args = parser.parse_args()
@@ -65,6 +80,8 @@ def main() -> None:
         cmd_ingest(args)
     elif args.command == "web":
         cmd_web(args)
+    elif args.command == "serve":
+        cmd_serve(args)
     elif args.command == "list":
         cmd_list(args)
 
