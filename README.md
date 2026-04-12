@@ -9,8 +9,8 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 - **Cited answers** -- every answer references `[Book Name, p.XX]` so you can verify
 - **Multilingual** -- works with English and German source books; responds in the user's language
 - **Game system filtering** -- organize books by system and filter queries accordingly
-- **CLI and Web UI** -- interactive terminal chat or Gradio browser interface
-- **Voice input** -- optional speech-to-text via [whisper.cpp](https://github.com/ggerganov/whisper.cpp) server (works in all browsers)
+- **CLI and Web UI** -- interactive terminal chat or browser-based chat interface with multi-chat management
+- **OpenAI-compatible API** -- use with Open WebUI or any OpenAI-compatible client for chat persistence and management
 
 ## Vibe Code Warning
 
@@ -37,9 +37,11 @@ And I got somewhere. The result is clearly not perfect, but its a lot more "work
 git clone https://codeberg.org/maub/rpg-bot.git
 cd rpg-bot
 
-# Copy the environment file and add your API key(s)
+# Copy config files and add your API key(s)
 cp .env.example .env
+cp config.example.yaml config.yaml
 # Edit .env and set ANTHROPIC_API_KEY and/or OPENAI_API_KEY
+# Edit config.yaml to configure LLM backend, embeddings server, etc.
 
 # Install dependencies
 uv sync
@@ -109,46 +111,21 @@ In-chat commands:
 ### Web UI
 
 ```bash
-uv run rpg-bot web
+uv run rpg-bot serve
 ```
 
-Opens a Gradio chat interface at `http://localhost:7860` with a game system dropdown.
+Opens the web chat interface at `http://localhost:8000` with:
+- Multi-chat sidebar (create, rename, delete chats)
+- Game system filter per chat
+- Streaming responses with Markdown rendering
+- Citation highlighting (`[Book Name, p.XX]`)
+- Chat persistence in SQLite
 
-#### Voice input (optional)
+Use `--port` to change the port, e.g. `uv run rpg-bot serve --port 3000`.
 
-The web UI supports voice input via a microphone recording button. Audio is transcribed locally using a [whisper.cpp](https://github.com/ggerganov/whisper.cpp) server. To enable it:
+#### Using with Open WebUI or other clients
 
-1. **Install whisper.cpp** and download a model:
-
-   ```bash
-   # Build from source (macOS with Metal acceleration)
-   git clone https://github.com/ggerganov/whisper.cpp.git
-   cd whisper.cpp
-   cmake -B build
-   cmake --build build --config Release
-
-   # Download a model (medium is a good balance for English + German)
-   ./models/download-ggml-model.sh medium
-   ```
-
-2. **Start the whisper.cpp server:**
-
-   ```bash
-   ./build/bin/whisper-server -m models/ggml-medium.bin -l auto --convert
-   ```
-
-   - `-l auto` detects the spoken language automatically
-   - `--convert` accepts non-WAV audio formats (requires ffmpeg)
-   - Server runs on `http://localhost:8080` by default
-
-3. **Enable STT** in `config.yaml`:
-
-   ```yaml
-   stt:
-     enabled: true
-   ```
-
-In the web UI, a microphone widget will appear. Record your question, then click Send.
+The same server exposes an OpenAI-compatible API at `http://localhost:8000/v1`. Point any compatible client at this URL to use the RAG pipeline with your own chat frontend.
 
 ### List ingested books
 
@@ -158,12 +135,12 @@ uv run rpg-bot list
 
 ## Configuration
 
-All settings are in `config.yaml`:
+Copy `config.example.yaml` to `config.yaml` and adjust as needed:
 
 ```yaml
 llm:
   backend: "anthropic"           # "anthropic" or "openai"
-  model: "claude-sonnet-4-20250514"
+  model: "claude-sonnet-4-6"
   max_tokens: 4096
   temperature: 0.3
   # base_url: "http://localhost:1234/v1"  # only used with "openai" backend
@@ -215,23 +192,6 @@ llm:
 
 No API key is needed for local models.
 
-### Speech-to-text
-
-Voice input defaults to a local whisper.cpp server. You can also use any OpenAI-compatible transcription endpoint:
-
-```yaml
-stt:
-  enabled: true
-  backend: "whisper-cpp"                   # "whisper-cpp" or "openai"
-  base_url: "http://localhost:8080"        # whisper.cpp server default
-
-  # For OpenAI-compatible backends (faster-whisper-server, Ollama, OpenAI API),
-  # set backend: "openai" and adjust base_url:
-  # backend: "openai"
-  # base_url: ""                           # real OpenAI API (needs OPENAI_API_KEY)
-  # base_url: "http://localhost:8080/v1"   # faster-whisper-server
-```
-
 ### Secrets
 
 Secrets go in `.env` (not committed):
@@ -281,5 +241,9 @@ User question
 - **Hybrid retrieval** (`retrieval/query.py`) -- combines vector similarity with BM25 keyword matching via Reciprocal Rank Fusion (RRF). Keyword matches bypass the distance threshold, so exact term matches always surface.
 - **Dual LLM backend** (`llm/client.py`) -- Anthropic SDK or OpenAI SDK, switchable via `config.yaml`. Supports streaming.
 - **Embeddings** (`embeddings.py`) -- calls any OpenAI-compatible `/v1/embeddings` endpoint. Works with LM Studio, Ollama, or the real OpenAI API.
+
+- **Web UI** (`static/`) -- Single-page app built with Alpine.js, Tailwind CSS, and marked.js. Served by FastAPI as static files. Multi-chat management with SQLite persistence.
+- **API server** (`api/server.py`) -- OpenAI-compatible `/v1/chat/completions` endpoint that transparently runs RAG retrieval. Also serves chat CRUD endpoints under `/api/` for the web UI.
+- **Chat persistence** (`persistence/`) -- SQLite database (`data/chats.db`) for storing chats and messages. Auto-titles chats from the first user message.
 
 Both CLI and Web UI share the same retrieval and LLM backend. Source books are stored in a single ChromaDB collection with metadata filtering for game system, language, page number, and section.

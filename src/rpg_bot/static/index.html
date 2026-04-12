@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RPG Support Bot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/static/js/citations.js"></script>
+  <script src="/static/js/app.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+    }
+  </script>
+</head>
+<body class="h-full bg-gray-900 text-gray-100" x-data="chatApp()">
+  <div class="flex h-full">
+
+    <!-- Sidebar -->
+    <aside class="flex flex-col bg-gray-800 border-r border-gray-700 transition-all duration-200"
+           :class="sidebarOpen ? 'w-72' : 'w-0 overflow-hidden'">
+
+      <!-- Header -->
+      <div class="p-4 border-b border-gray-700">
+        <h1 class="text-lg font-bold text-amber-400 mb-3">RPG Support Bot</h1>
+        <button @click="newChat()"
+                class="w-full px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-medium transition-colors">
+          + New Chat
+        </button>
+      </div>
+
+      <!-- Chat list -->
+      <div class="flex-1 overflow-y-auto p-2 space-y-1">
+        <template x-for="chat in chats" :key="chat.id">
+          <div @click="selectChat(chat.id)"
+               class="group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors"
+               :class="chat.id === activeChatId ? 'bg-gray-600' : 'hover:bg-gray-700'">
+
+            <!-- Title display / edit -->
+            <div class="flex-1 min-w-0" x-show="editingTitle !== chat.id">
+              <div class="text-sm truncate" x-text="chat.title"></div>
+              <div class="text-xs text-gray-400 truncate" x-show="chat.game_system"
+                   x-text="chat.game_system"></div>
+            </div>
+            <input x-show="editingTitle === chat.id"
+                   x-model="editTitleValue"
+                   @keydown.enter="saveTitle(chat.id)"
+                   @keydown.escape="editingTitle = null"
+                   @click.stop
+                   class="flex-1 min-w-0 bg-gray-600 text-sm text-white px-2 py-1 rounded border border-gray-500 focus:outline-none focus:border-amber-500">
+
+            <!-- Actions -->
+            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                 x-show="editingTitle !== chat.id">
+              <button @click.stop="startEditTitle(chat.id)"
+                      class="p-1 hover:text-amber-400 text-gray-400" title="Rename">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+              </button>
+              <button @click.stop="deleteChat(chat.id)"
+                      class="p-1 hover:text-red-400 text-gray-400" title="Delete">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Empty state -->
+        <div x-show="chats.length === 0" class="text-center text-gray-500 text-sm py-8">
+          No chats yet.<br>Click "+ New Chat" to start.
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main area -->
+    <main class="flex-1 flex flex-col min-w-0">
+
+      <!-- Top bar -->
+      <header class="flex items-center gap-3 px-4 py-3 border-b border-gray-700 bg-gray-800/50">
+        <button @click="sidebarOpen = !sidebarOpen"
+                class="p-1.5 hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-gray-200">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+
+        <div class="flex-1 text-sm font-medium truncate" x-text="activeChat?.title || 'RPG Support Bot'"></div>
+
+        <!-- Game system selector -->
+        <select x-model="activeGameSystem"
+                @change="updateGameSystem($event.target.value)"
+                class="bg-gray-700 border border-gray-600 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-amber-500 text-gray-200">
+          <option value="">All Systems</option>
+          <template x-for="gs in gameSystems" :key="gs">
+            <option :value="gs" x-text="gs"></option>
+          </template>
+        </select>
+      </header>
+
+      <!-- Messages -->
+      <div id="messages" class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+
+        <!-- Welcome screen when no chat is active -->
+        <div x-show="!activeChatId" class="flex items-center justify-center h-full">
+          <div class="text-center max-w-md">
+            <div class="text-5xl mb-4">&#x1F3B2;</div>
+            <h2 class="text-xl font-semibold text-gray-300 mb-2">RPG Support Bot</h2>
+            <p class="text-gray-500 mb-6">
+              Ask questions about RPG rules, world building, characters, and more.
+              Answers are sourced from your ingested sourcebooks.
+            </p>
+            <button @click="newChat()"
+                    class="px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-medium transition-colors">
+              Start a new chat
+            </button>
+          </div>
+        </div>
+
+        <!-- Chat messages -->
+        <template x-if="activeChatId">
+          <div>
+            <template x-for="(msg, idx) in messages" :key="idx">
+              <div class="flex mb-4" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+                <div class="max-w-2xl rounded-xl px-4 py-3"
+                     :class="msg.role === 'user'
+                       ? 'bg-amber-700/30 border border-amber-700/40'
+                       : 'bg-gray-800 border border-gray-700'">
+                  <div class="prose-chat text-sm text-gray-200"
+                       x-html="renderMarkdown(msg.content)"></div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Streaming message -->
+            <div x-show="streaming" class="flex justify-start mb-4">
+              <div class="max-w-2xl rounded-xl px-4 py-3 bg-gray-800 border border-gray-700">
+                <div class="prose-chat text-sm text-gray-200"
+                     :class="{ 'streaming-cursor': streaming }"
+                     x-html="renderMarkdown(streamingContent) || '<span class=\'text-gray-500\'>Thinking...</span>'">
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Input area -->
+      <div x-show="activeChatId" class="border-t border-gray-700 bg-gray-800/50 p-4">
+        <div class="max-w-3xl mx-auto flex gap-3">
+          <textarea x-model="userInput"
+                    @keydown="handleKeydown($event)"
+                    :disabled="streaming"
+                    placeholder="Ask about RPG rules, characters, world building..."
+                    rows="1"
+                    class="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-sm text-gray-200 placeholder-gray-500 resize-none focus:outline-none focus:border-amber-500 max-h-40 disabled:opacity-50"></textarea>
+          <button @click="sendMessage()"
+                  :disabled="streaming || !userInput.trim()"
+                  class="px-4 py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-xl transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</body>
+</html>

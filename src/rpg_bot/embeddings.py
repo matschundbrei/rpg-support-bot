@@ -16,7 +16,7 @@ def _get_client() -> OpenAI:
             kwargs["base_url"] = settings.embeddings.base_url
         _client = OpenAI(
             api_key=settings.openai_api_key or "no-key-required",
-            timeout=120.0,
+            timeout=600.0,
             **kwargs,
         )
     return _client
