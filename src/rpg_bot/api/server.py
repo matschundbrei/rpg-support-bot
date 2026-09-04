@@ -7,11 +7,16 @@ import json
 import time
 import uuid
 from pathlib import Path
+from typing import cast
 
+from anthropic import Anthropic
+from anthropic.types import MessageParam
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field
 
 from rpg_bot.config import get_settings
@@ -168,26 +173,19 @@ def _get_game_systems() -> list[str]:
         return []
 
 
-_llm_clients: dict[tuple, object] = {}
+_llm_clients: dict[tuple[str, str, str], Anthropic | OpenAI] = {}
 
 
-def _get_llm_client(backend: str, base_url: str, api_key: str):
+def _get_llm_client(backend: str, base_url: str, api_key: str) -> Anthropic | OpenAI:
     """Cache SDK clients per (backend, base_url, key) — they are thread-safe."""
     key = (backend, base_url, api_key)
     if key not in _llm_clients:
         if backend == "anthropic":
-            import anthropic
-
-            _llm_clients[key] = anthropic.Anthropic(api_key=api_key)
+            _llm_clients[key] = Anthropic(api_key=api_key)
         else:
-            from openai import OpenAI
-
-            kwargs = {}
-            if base_url:
-                kwargs["base_url"] = base_url
             _llm_clients[key] = OpenAI(
                 api_key=api_key or "no-key-required",
-                **kwargs,
+                base_url=base_url or None,
             )
     return _llm_clients[key]
 
@@ -203,21 +201,25 @@ def _call_llm_stream(
 
     if backend == "anthropic":
         client = _get_llm_client(backend, "", settings.anthropic_api_key)
+        if not isinstance(client, Anthropic):
+            raise RuntimeError("Expected Anthropic client for anthropic backend")
         system = messages[0]["content"]
         chat_messages = messages[1:]
         with client.messages.stream(
             model=settings.llm.model,
             max_tokens=max_tokens,
             system=system,
-            messages=chat_messages,
+            messages=cast("list[MessageParam]", chat_messages),
             extra_body={"temperature": temperature},
         ) as stream:
             yield from stream.text_stream
     else:
         client = _get_llm_client(backend, settings.llm.base_url, settings.openai_api_key)
+        if not isinstance(client, OpenAI):
+            raise RuntimeError("Expected OpenAI client for openai backend")
         stream = client.chat.completions.create(
             model=settings.llm.model,
-            messages=messages,
+            messages=cast("list[ChatCompletionMessageParam]", messages),
             max_tokens=max_tokens,
             temperature=temperature,
             stream=True,

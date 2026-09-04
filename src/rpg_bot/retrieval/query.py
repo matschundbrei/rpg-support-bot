@@ -116,8 +116,8 @@ def query_rag(
         where=where,
     )
 
-    vector_ids = vector_results.get("ids", [[]])[0]
-    vector_distances = vector_results.get("distances", [[]])[0]
+    vector_ids = vector_results["ids"][0]
+    vector_distances = (vector_results["distances"] or [[]])[0]
     vector_ranking = {doc_id: rank for rank, doc_id in enumerate(vector_ids)}
     id_to_dist = dict(zip(vector_ids, vector_distances, strict=True))
 

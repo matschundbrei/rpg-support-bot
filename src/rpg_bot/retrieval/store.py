@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import contextlib
+from typing import cast
 
 import chromadb
+from chromadb.api.types import Metadata, PyEmbedding, QueryResult
 from chromadb.config import Settings as ChromaSettings
 
 from rpg_bot.config import get_settings
@@ -37,8 +39,8 @@ class VectorStore:
         self.collection.add(
             ids=ids,
             documents=documents,
-            embeddings=embeddings,
-            metadatas=metadatas,
+            embeddings=cast("list[PyEmbedding]", embeddings),
+            metadatas=cast("list[Metadata]", metadatas),
         )
 
     def query(
@@ -46,7 +48,7 @@ class VectorStore:
         query_embedding: list[float],
         n_results: int = 8,
         where: dict | None = None,
-    ) -> dict:
+    ) -> QueryResult:
         kwargs: dict = {
             "query_embeddings": [query_embedding],
             "n_results": n_results,
@@ -62,7 +64,7 @@ class VectorStore:
         except Exception:
             return []
         sources = set()
-        for meta in results.get("metadatas", []):
+        for meta in results["metadatas"] or []:
             if meta and "source" in meta:
                 sources.add(meta["source"])
         return sorted(sources)

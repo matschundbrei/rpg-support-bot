@@ -39,7 +39,10 @@ def _is_heading(span: dict, page_avg_size: float) -> bool:
 
 def _extract_headings(page: pymupdf.Page) -> list[str]:
     """Extract headings from a page using font size heuristics."""
-    blocks = page.get_text("dict", sort=False)["blocks"]
+    text = page.get_text("dict", sort=False)
+    if not isinstance(text, dict):
+        return []
+    blocks = text["blocks"]
 
     all_sizes: list[float] = []
     for block in blocks:
@@ -100,9 +103,13 @@ def extract_pdf(pdf_path: Path) -> list[PageContent]:
     doc = pymupdf.open(str(pdf_path))
     pages: list[PageContent] = []
 
-    for page_num, page in enumerate(doc, start=1):
+    for page_num in range(doc.page_count):
+        page = doc[page_num]
         # Use plain text extraction which handles columns correctly
-        full_text = _dedup_layered_text(page.get_text("text"))
+        text = page.get_text("text")
+        if not isinstance(text, str):
+            continue
+        full_text = _dedup_layered_text(text)
         if not full_text.strip():
             continue
 
@@ -111,7 +118,7 @@ def extract_pdf(pdf_path: Path) -> list[PageContent]:
 
         pages.append(
             PageContent(
-                page_number=page_num,
+                page_number=page_num + 1,
                 text=full_text,
                 headings=headings,
             )

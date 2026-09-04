@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import cast
+
+from anthropic import Anthropic
+from anthropic.types import MessageParam
+from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from rpg_bot.config import get_settings
 from rpg_bot.llm.prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_RAG
@@ -16,19 +22,13 @@ class LLMClient:
         self.max_history = settings.llm.max_history
         self.history: list[dict[str, str]] = []
 
+        self.client: Anthropic | OpenAI
         if self.backend == "anthropic":
-            import anthropic
-
-            self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+            self.client = Anthropic(api_key=settings.anthropic_api_key)
         elif self.backend == "openai":
-            from openai import OpenAI
-
-            kwargs = {}
-            if settings.llm.base_url:
-                kwargs["base_url"] = settings.llm.base_url
             self.client = OpenAI(
                 api_key=settings.openai_api_key or "no-key-required",
-                **kwargs,
+                base_url=settings.llm.base_url or None,
             )
         else:
             raise ValueError(f"Unknown LLM backend: {self.backend!r}")
@@ -39,22 +39,25 @@ class LLMClient:
         return SYSTEM_PROMPT
 
     def _stream_anthropic(
-        self, system: str, messages: list[dict[str, str]]
+        self, client: Anthropic, system: str, messages: list[dict[str, str]]
     ) -> Generator[str, None, None]:
-        with self.client.messages.stream(
+        with client.messages.stream(
             model=self.model,
             max_tokens=self.max_tokens,
             system=system,
-            messages=messages,
+            messages=cast("list[MessageParam]", messages),
             extra_body={"temperature": self.temperature},
         ) as stream:
             yield from stream.text_stream
 
     def _stream_openai(
-        self, system: str, messages: list[dict[str, str]]
+        self, client: OpenAI, system: str, messages: list[dict[str, str]]
     ) -> Generator[str, None, None]:
-        oai_messages = [{"role": "system", "content": system}, *messages]
-        stream = self.client.chat.completions.create(
+        oai_messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system},
+            *cast("list[ChatCompletionMessageParam]", messages),
+        ]
+        stream = client.chat.completions.create(
             model=self.model,
             messages=oai_messages,
             max_tokens=self.max_tokens,
@@ -85,10 +88,11 @@ class LLMClient:
 
         full_response = ""
         try:
-            if self.backend == "anthropic":
-                streamer = self._stream_anthropic(system, self.history)
+            client = self.client
+            if isinstance(client, Anthropic):
+                streamer = self._stream_anthropic(client, system, self.history)
             else:
-                streamer = self._stream_openai(system, self.history)
+                streamer = self._stream_openai(client, system, self.history)
 
             for text in streamer:
                 full_response += text
