@@ -32,12 +32,8 @@ class LLMConfig(BaseSettings):
 
 
 class EmbeddingsConfig(BaseSettings):
-    model: str = _yaml.get("embeddings", {}).get(
-        "model", "nomic-embed-text-v2-moe:latest"
-    )
-    base_url: str = _yaml.get("embeddings", {}).get(
-        "base_url", "http://localhost:11434/v1"
-    )
+    model: str = _yaml.get("embeddings", {}).get("model", "nomic-embed-text-v2-moe:latest")
+    base_url: str = _yaml.get("embeddings", {}).get("base_url", "http://localhost:11434/v1")
 
 
 class ChunkingConfig(BaseSettings):
@@ -47,18 +43,12 @@ class ChunkingConfig(BaseSettings):
 
 class RetrievalConfig(BaseSettings):
     top_k: int = _yaml.get("retrieval", {}).get("top_k", 15)
-    relevance_threshold: float = _yaml.get("retrieval", {}).get(
-        "relevance_threshold", 1.0
-    )
+    relevance_threshold: float = _yaml.get("retrieval", {}).get("relevance_threshold", 1.0)
 
 
 class ChromaDBConfig(BaseSettings):
-    persist_directory: str = _yaml.get("chromadb", {}).get(
-        "persist_directory", "data/chromadb"
-    )
-    collection_name: str = _yaml.get("chromadb", {}).get(
-        "collection_name", "rpg_sourcebooks"
-    )
+    persist_directory: str = _yaml.get("chromadb", {}).get("persist_directory", "data/chromadb")
+    collection_name: str = _yaml.get("chromadb", {}).get("collection_name", "rpg_sourcebooks")
 
     @property
     def persist_path(self) -> Path:

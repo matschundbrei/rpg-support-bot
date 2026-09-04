@@ -16,6 +16,7 @@ class Chunk:
 def _detect_language(text: str) -> str:
     try:
         from langdetect import detect
+
         return detect(text[:500])
     except Exception:
         return "en"
@@ -68,7 +69,7 @@ def _split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
             overlap_text = prev[-overlap:] if len(prev) > overlap else prev
             space_idx = overlap_text.find(" ")
             if space_idx > 0:
-                overlap_text = overlap_text[space_idx + 1:]
+                overlap_text = overlap_text[space_idx + 1 :]
             chunk = overlap_text + " " + chunk
         chunks.append(chunk.strip())
 
@@ -78,9 +79,7 @@ def _split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
 _MIN_SECTION_SIZE = 150
 
 
-def _split_into_sections(
-    text: str, headings: list[str]
-) -> list[tuple[str, str]]:
+def _split_into_sections(text: str, headings: list[str]) -> list[tuple[str, str]]:
     """Split page text at heading boundaries.
 
     Returns list of (heading, section_text) tuples. Merges tiny sections
@@ -89,9 +88,7 @@ def _split_into_sections(
     # Find heading positions (must appear at start of a line)
     positions: list[tuple[int, str]] = []
     for heading in headings:
-        pattern = re.compile(
-            r"^" + re.escape(heading) + r"\s*$", re.MULTILINE
-        )
+        pattern = re.compile(r"^" + re.escape(heading) + r"\s*$", re.MULTILINE)
         match = pattern.search(text)
         if match and match.start() not in {p for p, _ in positions}:
             positions.append((match.start(), heading))
@@ -162,17 +159,19 @@ def chunk_pages(
             for text in text_chunks:
                 chunk_text = f"[{breadcrumb}]\n{text}"
 
-                all_chunks.append(Chunk(
-                    text=chunk_text,
-                    metadata={
-                        "source": source_name,
-                        "source_path": source_path,
-                        "page": page.page_number,
-                        "game_system": game_system,
-                        "language": language,
-                        "section": section_heading,
-                        "breadcrumb": breadcrumb,
-                    },
-                ))
+                all_chunks.append(
+                    Chunk(
+                        text=chunk_text,
+                        metadata={
+                            "source": source_name,
+                            "source_path": source_path,
+                            "page": page.page_number,
+                            "game_system": game_system,
+                            "language": language,
+                            "section": section_heading,
+                            "breadcrumb": breadcrumb,
+                        },
+                    )
+                )
 
     return all_chunks

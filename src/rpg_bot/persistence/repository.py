@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from rpg_bot.persistence.database import get_db
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _row_to_dict(row) -> dict:
@@ -19,8 +19,7 @@ def _row_to_dict(row) -> dict:
 def list_chats() -> list[dict]:
     db = get_db()
     rows = db.execute(
-        "SELECT id, title, game_system, created_at, updated_at "
-        "FROM chats ORDER BY updated_at DESC"
+        "SELECT id, title, game_system, created_at, updated_at FROM chats ORDER BY updated_at DESC"
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
@@ -35,8 +34,13 @@ def create_chat(game_system: str | None = None) -> dict:
         (chat_id, game_system, now, now),
     )
     db.commit()
-    return {"id": chat_id, "title": "New Chat", "game_system": game_system,
-            "created_at": now, "updated_at": now}
+    return {
+        "id": chat_id,
+        "title": "New Chat",
+        "game_system": game_system,
+        "created_at": now,
+        "updated_at": now,
+    }
 
 
 def chat_exists(chat_id: str) -> bool:
@@ -48,8 +52,7 @@ def chat_exists(chat_id: str) -> bool:
 def get_chat(chat_id: str) -> dict | None:
     db = get_db()
     chat = db.execute(
-        "SELECT id, title, game_system, created_at, updated_at "
-        "FROM chats WHERE id = ?",
+        "SELECT id, title, game_system, created_at, updated_at FROM chats WHERE id = ?",
         (chat_id,),
     ).fetchone()
     if not chat:
@@ -108,8 +111,7 @@ def add_message(chat_id: str, role: str, content: str) -> dict:
     msg_id = uuid.uuid4().hex
     now = _now()
     db.execute(
-        "INSERT INTO messages (id, chat_id, role, content, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO messages (id, chat_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
         (msg_id, chat_id, role, content, now),
     )
     db.execute(
@@ -123,9 +125,7 @@ def add_message(chat_id: str, role: str, content: str) -> dict:
 def auto_title(chat_id: str, first_user_message: str) -> None:
     """Set chat title from first user message if still 'New Chat'."""
     db = get_db()
-    chat = db.execute(
-        "SELECT title FROM chats WHERE id = ?", (chat_id,)
-    ).fetchone()
+    chat = db.execute("SELECT title FROM chats WHERE id = ?", (chat_id,)).fetchone()
     if not chat or chat["title"] != "New Chat":
         return
 

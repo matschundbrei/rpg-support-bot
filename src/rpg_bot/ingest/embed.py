@@ -5,16 +5,15 @@ import uuid
 from pathlib import Path
 
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from rpg_bot.config import get_settings
+from rpg_bot.embeddings import embed_texts
 from rpg_bot.ingest.chunker import chunk_pages
 from rpg_bot.ingest.extract import extract_pdf
 from rpg_bot.retrieval.store import VectorStore, get_store
 
 console = Console()
-
-from rpg_bot.embeddings import embed_texts
 
 EMBED_BATCH_SIZE = 16
 
@@ -65,7 +64,9 @@ def ingest_pdf(pdf_path: Path, store: VectorStore) -> int:
 
     console.print(f"  {len(pages)} pages extracted")
 
-    chunks = chunk_pages(pages, source_name=source_name, game_system=game_system, source_path=source_path)
+    chunks = chunk_pages(
+        pages, source_name=source_name, game_system=game_system, source_path=source_path
+    )
     console.print(f"  {len(chunks)} chunks created")
 
     if not chunks:

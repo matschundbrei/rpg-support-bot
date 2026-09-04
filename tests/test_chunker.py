@@ -1,4 +1,4 @@
-from rpg_bot.ingest.chunker import Chunk, _split_text, chunk_pages
+from rpg_bot.ingest.chunker import _split_text, chunk_pages
 from rpg_bot.ingest.extract import PageContent
 
 
@@ -25,9 +25,9 @@ def test_split_text_overlap():
     assert len(chunks) > 1
     # With overlap, later chunks should contain some text from the previous chunk
     if len(chunks) >= 2:
-        # Check there's some shared content
-        last_part_of_first = chunks[0][-50:]
-        assert len(chunks[1]) > 0
+        # With overlap, the tail of the previous chunk reappears at the start
+        # of the next one (trimmed to a word boundary)
+        assert chunks[0][-30:].rstrip() in chunks[1]
 
 
 def test_chunk_pages_metadata():

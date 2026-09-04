@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 
 def cmd_chat(args: argparse.Namespace) -> None:
@@ -63,7 +62,10 @@ def main() -> None:
     serve_p = sub.add_parser("serve", help="Launch web UI and OpenAI-compatible API server")
     serve_p.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
     serve_p.add_argument("--port", "-p", type=int, default=8000, help="Port (default: 8000)")
-    serve_p.add_argument("--cors-origins", help="Comma-separated list of allowed CORS origins (e.g. 'http://localhost:3000,http://localhost:8080')")
+    serve_p.add_argument(
+        "--cors-origins",
+        help="Comma-separated list of allowed CORS origins (e.g. 'http://localhost:3000,http://localhost:8080')",
+    )
 
     sub.add_parser("list", help="List ingested source books")
 

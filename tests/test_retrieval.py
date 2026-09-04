@@ -1,5 +1,4 @@
 import types
-import uuid
 
 import pytest
 

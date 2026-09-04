@@ -13,6 +13,8 @@ uv sync                          # Install dependencies
 uv run pytest                    # Run all tests
 uv run pytest tests/test_chunker.py  # Run a single test file
 uv run pytest -k test_split_text_short  # Run a single test
+uv run ruff check --fix .        # Lint (auto-fix)
+uv run ruff format .             # Format
 
 uv run rpg-bot ingest            # Ingest all PDFs from sourcebooks/
 uv run rpg-bot chat              # CLI chat
@@ -20,6 +22,8 @@ uv run rpg-bot chat -s dnd5e     # CLI chat filtered to a game system
 uv run rpg-bot serve             # Launch web UI + API server on :8000
 uv run rpg-bot list              # List ingested source books
 ```
+
+After editing code, run `uv run ruff check --fix .`, `uv run ruff format .`, and `uv run pytest` before considering the task complete.
 
 ## Architecture
 

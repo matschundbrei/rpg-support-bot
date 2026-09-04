@@ -38,7 +38,7 @@ def _render_citations(text: str, source_map: dict[str, str]) -> Text:
 
     for match in _CITATION_RE.finditer(text):
         # Add text before the citation
-        rich_text.append(text[last_end:match.start()])
+        rich_text.append(text[last_end : match.start()])
 
         citation_key = match.group(1)
         url = source_map.get(citation_key, "")
@@ -90,7 +90,8 @@ def run_chat(
             continue
 
         if user_input.lower() == "/sources":
-            console.print(f"[dim]Active game system filter: {current_system or 'none (all systems)'}[/dim]")
+            label = current_system or "none (all systems)"
+            console.print(f"[dim]Active game system filter: {label}[/dim]")
             try:
                 from rpg_bot.retrieval.store import get_store
 

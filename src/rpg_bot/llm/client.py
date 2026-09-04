@@ -48,8 +48,7 @@ class LLMClient:
             messages=messages,
             extra_body={"temperature": self.temperature},
         ) as stream:
-            for text in stream.text_stream:
-                yield text
+            yield from stream.text_stream
 
     def _stream_openai(
         self, system: str, messages: list[dict[str, str]]

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import quote
 
 import numpy as np
@@ -31,7 +32,7 @@ def _build_file_url(source_path: str, page: int | str) -> str:
 
 _bm25_index: BM25Okapi | None = None
 _bm25_doc_ids: list[str] | None = None
-_bm25_metadatas: list[dict] | None = None
+_bm25_metadatas: list[Mapping[str, Any]] | None = None
 _bm25_corpus_size: int | None = None
 _bm25_store_id: int | None = None
 
@@ -42,28 +43,34 @@ def _tokenize(text: str) -> list[str]:
     return [w for w in _TOKENIZE_RE.findall(text.lower()) if len(w) > 2]
 
 
-def _get_bm25_index(store: VectorStore) -> tuple[BM25Okapi, list[str], list[dict]]:
+def _get_bm25_index(store: VectorStore) -> tuple[BM25Okapi, list[str], list[Mapping[str, Any]]]:
     global _bm25_index, _bm25_doc_ids, _bm25_metadatas, _bm25_corpus_size, _bm25_store_id
 
     current_size = store.count()
     store_id = id(store)
     if (
         _bm25_index is not None
+        and _bm25_doc_ids is not None
+        and _bm25_metadatas is not None
         and _bm25_corpus_size == current_size
         and _bm25_store_id == store_id
     ):
         return _bm25_index, _bm25_doc_ids, _bm25_metadatas
 
     all_data = store.collection.get(include=["documents", "metadatas"])
-    _bm25_doc_ids = all_data["ids"]
-    _bm25_metadatas = all_data["metadatas"]
+    doc_ids = all_data["ids"]
+    documents = all_data["documents"] or []
+    metadatas = all_data["metadatas"] or []
 
-    tokenized = [_tokenize(doc) for doc in all_data["documents"]]
-    _bm25_index = BM25Okapi(tokenized)
+    index = BM25Okapi([_tokenize(doc) for doc in documents])
+
+    _bm25_index = index
+    _bm25_doc_ids = doc_ids
+    _bm25_metadatas = metadatas
     _bm25_corpus_size = current_size
     _bm25_store_id = store_id
 
-    return _bm25_index, _bm25_doc_ids, _bm25_metadatas
+    return index, doc_ids, metadatas
 
 
 def _reciprocal_rank_fusion(
@@ -112,7 +119,7 @@ def query_rag(
     vector_ids = vector_results.get("ids", [[]])[0]
     vector_distances = vector_results.get("distances", [[]])[0]
     vector_ranking = {doc_id: rank for rank, doc_id in enumerate(vector_ids)}
-    id_to_dist = dict(zip(vector_ids, vector_distances))
+    id_to_dist = dict(zip(vector_ids, vector_distances, strict=True))
 
     # 2. BM25 keyword search
     bm25, bm25_ids, bm25_metas = _get_bm25_index(store)
@@ -143,8 +150,8 @@ def query_rag(
 
     # 4. Fetch documents for fused results
     fetched = store.collection.get(ids=fused_ids, include=["documents", "metadatas"])
-    id_to_doc = dict(zip(fetched["ids"], fetched["documents"]))
-    id_to_meta = dict(zip(fetched["ids"], fetched["metadatas"]))
+    id_to_doc = dict(zip(fetched["ids"], fetched["documents"] or [], strict=True))
+    id_to_meta = dict(zip(fetched["ids"], fetched["metadatas"] or [], strict=True))
 
     # 5. Build context, dedup, apply threshold only to vector-only results
     threshold = settings.retrieval.relevance_threshold
@@ -170,14 +177,12 @@ def query_rag(
         if not is_keyword_match and dist is not None and dist > threshold:
             continue
 
-        source = meta.get("source", "Unknown")
-        page = meta.get("page", "?")
-        source_path = meta.get("source_path", "")
+        source = str(meta.get("source", "Unknown"))
+        page = str(meta.get("page", "?"))
+        source_path = str(meta.get("source_path") or "")
         idx = len(context_blocks) + 1
 
-        context_blocks.append(
-            f"[{idx}] Source: {source}, p.{page}\n{doc}"
-        )
+        context_blocks.append(f"[{idx}] Source: {source}, p.{page}\n{doc}")
 
         citation_key = f"{source}, p.{page}"
         if citation_key not in source_map and source_path:

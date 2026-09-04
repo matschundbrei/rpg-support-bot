@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 
@@ -78,10 +80,8 @@ class VectorStore:
             return False
 
     def delete_source(self, source_name: str) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.collection.delete(where={"source": source_name})
-        except Exception:
-            pass
 
     def count(self) -> int:
         return self.collection.count()

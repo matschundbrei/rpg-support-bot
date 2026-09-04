@@ -47,10 +47,15 @@ def _check_auth(request: Request) -> bool:
     if not key:
         return True
     path = request.url.path
-    if path in _PUBLIC_PREFIXES or path.startswith("/static") or path in (
-        "/docs",
-        "/redoc",
-        "/openapi.json",
+    if (
+        path in _PUBLIC_PREFIXES
+        or path.startswith("/static")
+        or path
+        in (
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+        )
     ):
         return True
     auth = request.headers.get("authorization", "")
@@ -207,12 +212,9 @@ def _call_llm_stream(
             messages=chat_messages,
             extra_body={"temperature": temperature},
         ) as stream:
-            for text in stream.text_stream:
-                yield text
+            yield from stream.text_stream
     else:
-        client = _get_llm_client(
-            backend, settings.llm.base_url, settings.openai_api_key
-        )
+        client = _get_llm_client(backend, settings.llm.base_url, settings.openai_api_key)
         stream = client.chat.completions.create(
             model=settings.llm.model,
             messages=messages,
@@ -326,7 +328,9 @@ def list_models():
 @app.post("/v1/chat/completions")
 def chat_completions(request: ChatCompletionRequest):
     settings = get_settings()
-    temperature = request.temperature if request.temperature is not None else settings.llm.temperature
+    temperature = (
+        request.temperature if request.temperature is not None else settings.llm.temperature
+    )
     max_tokens = request.max_tokens if request.max_tokens is not None else settings.llm.max_tokens
 
     # RAG retrieval

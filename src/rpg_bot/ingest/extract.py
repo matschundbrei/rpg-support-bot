@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import warnings
-
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -13,7 +12,7 @@ warnings.filterwarnings(
     message=r"builtin type (SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute",
 )
 
-import pymupdf
+import pymupdf  # noqa: E402  # must follow warnings.filterwarnings above
 
 
 @dataclass
@@ -88,8 +87,8 @@ def _dedup_layered_text(text: str) -> str:
     for i in range(len(lines) // 3, 2 * len(lines) // 3 + 1):
         if lines[i].strip() == first_line:
             # Verify it's truly a duplicate by checking a few more lines
-            first_half = [l.strip() for l in lines[:5] if l.strip()]
-            second_half = [l.strip() for l in lines[i : i + 5] if l.strip()]
+            first_half = [line.strip() for line in lines[:5] if line.strip()]
+            second_half = [line.strip() for line in lines[i : i + 5] if line.strip()]
             if first_half == second_half:
                 return "\n".join(lines[:i])
 
@@ -110,11 +109,13 @@ def extract_pdf(pdf_path: Path) -> list[PageContent]:
         # Use dict extraction only for heading detection
         headings = _extract_headings(page)
 
-        pages.append(PageContent(
-            page_number=page_num,
-            text=full_text,
-            headings=headings,
-        ))
+        pages.append(
+            PageContent(
+                page_number=page_num,
+                text=full_text,
+                headings=headings,
+            )
+        )
 
     doc.close()
     return pages
