@@ -44,9 +44,9 @@ class LLMClient:
         with self.client.messages.stream(
             model=self.model,
             max_tokens=self.max_tokens,
-            temperature=self.temperature,
             system=system,
             messages=messages,
+            extra_body={"temperature": self.temperature},
         ) as stream:
             for text in stream.text_stream:
                 yield text

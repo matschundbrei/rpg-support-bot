@@ -203,9 +203,9 @@ def _call_llm_stream(
         with client.messages.stream(
             model=settings.llm.model,
             max_tokens=max_tokens,
-            temperature=temperature,
             system=system,
             messages=chat_messages,
+            extra_body={"temperature": temperature},
         ) as stream:
             for text in stream.text_stream:
                 yield text
