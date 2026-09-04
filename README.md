@@ -1,5 +1,8 @@
 # RPG Support Bot
 
+[![CI](https://github.com/matschundbrei/rpg-support-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/matschundbrei/rpg-support-bot/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/matschundbrei/rpg-support-bot/branch/main/graph/badge.svg)](https://codecov.io/gh/matschundbrei/rpg-support-bot)
+
 A RAG-powered assistant for tabletop RPG players and game masters. Ask questions about rules, world building, characters, and stories -- grounded in your own PDF source books with cited answers.
 
 ## Features
