@@ -17,7 +17,7 @@ from rpg_bot.config import get_settings
 from rpg_bot.llm.prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_WITH_RAG
 from rpg_bot.persistence import repository as repo
 from rpg_bot.retrieval.query import query_rag
-from rpg_bot.retrieval.store import VectorStore
+from rpg_bot.retrieval.store import get_store
 
 app = FastAPI(title="rpg-bot API")
 
@@ -103,19 +103,56 @@ def _get_system_prompt(context: str | None) -> str:
     return SYSTEM_PROMPT
 
 
+# --- Cached lookups ---
+
+_game_systems_cache: tuple[int, list[str]] | None = None
+
+
 def _get_game_systems() -> list[str]:
-    """Extract unique game system identifiers from ChromaDB metadata."""
+    """Extract unique game system identifiers from ChromaDB metadata.
+
+    Cached and invalidated when the chunk count changes (i.e. after ingest/delete).
+    """
+    global _game_systems_cache
+    store = get_store()
+    count = store.count()
+    if _game_systems_cache is not None and _game_systems_cache[0] == count:
+        return _game_systems_cache[1]
     try:
-        store = VectorStore()
         all_meta = store.collection.get(include=["metadatas"])
         systems = set()
         for meta in all_meta["metadatas"] or []:
             gs = meta.get("game_system")
             if gs:
                 systems.add(gs)
-        return sorted(systems)
+        _game_systems_cache = (count, sorted(systems))
+        return _game_systems_cache[1]
     except Exception:
         return []
+
+
+_llm_clients: dict[tuple, object] = {}
+
+
+def _get_llm_client(backend: str, base_url: str, api_key: str):
+    """Cache SDK clients per (backend, base_url, key) — they are thread-safe."""
+    key = (backend, base_url, api_key)
+    if key not in _llm_clients:
+        if backend == "anthropic":
+            import anthropic
+
+            _llm_clients[key] = anthropic.Anthropic(api_key=api_key)
+        else:
+            from openai import OpenAI
+
+            kwargs = {}
+            if base_url:
+                kwargs["base_url"] = base_url
+            _llm_clients[key] = OpenAI(
+                api_key=api_key or "no-key-required",
+                **kwargs,
+            )
+    return _llm_clients[key]
 
 
 def _call_llm_stream(
@@ -128,9 +165,7 @@ def _call_llm_stream(
     backend = settings.llm.backend
 
     if backend == "anthropic":
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        client = _get_llm_client(backend, "", settings.anthropic_api_key)
         system = messages[0]["content"]
         chat_messages = messages[1:]
         with client.messages.stream(
@@ -143,14 +178,8 @@ def _call_llm_stream(
             for text in stream.text_stream:
                 yield text
     else:
-        from openai import OpenAI
-
-        kwargs = {}
-        if settings.llm.base_url:
-            kwargs["base_url"] = settings.llm.base_url
-        client = OpenAI(
-            api_key=settings.openai_api_key or "no-key-required",
-            **kwargs,
+        client = _get_llm_client(
+            backend, settings.llm.base_url, settings.openai_api_key
         )
         stream = client.chat.completions.create(
             model=settings.llm.model,

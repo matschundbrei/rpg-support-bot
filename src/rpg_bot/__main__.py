@@ -35,9 +35,9 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
 
 def cmd_list(args: argparse.Namespace) -> None:
-    from rpg_bot.retrieval.store import VectorStore
+    from rpg_bot.retrieval.store import get_store
 
-    store = VectorStore()
+    store = get_store()
     sources = store.list_sources()
     if not sources:
         print("No source books ingested yet. Run: rpg-bot ingest")

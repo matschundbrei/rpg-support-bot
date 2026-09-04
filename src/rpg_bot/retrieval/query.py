@@ -10,7 +10,7 @@ from rank_bm25 import BM25Okapi
 
 from rpg_bot.config import get_settings
 from rpg_bot.embeddings import embed_query
-from rpg_bot.retrieval.store import VectorStore
+from rpg_bot.retrieval.store import VectorStore, get_store
 
 
 @dataclass
@@ -33,6 +33,7 @@ _bm25_index: BM25Okapi | None = None
 _bm25_doc_ids: list[str] | None = None
 _bm25_metadatas: list[dict] | None = None
 _bm25_corpus_size: int | None = None
+_bm25_store_id: int | None = None
 
 _TOKENIZE_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -42,10 +43,15 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _get_bm25_index(store: VectorStore) -> tuple[BM25Okapi, list[str], list[dict]]:
-    global _bm25_index, _bm25_doc_ids, _bm25_metadatas, _bm25_corpus_size
+    global _bm25_index, _bm25_doc_ids, _bm25_metadatas, _bm25_corpus_size, _bm25_store_id
 
     current_size = store.count()
-    if _bm25_index is not None and _bm25_corpus_size == current_size:
+    store_id = id(store)
+    if (
+        _bm25_index is not None
+        and _bm25_corpus_size == current_size
+        and _bm25_store_id == store_id
+    ):
         return _bm25_index, _bm25_doc_ids, _bm25_metadatas
 
     all_data = store.collection.get(include=["documents", "metadatas"])
@@ -55,6 +61,7 @@ def _get_bm25_index(store: VectorStore) -> tuple[BM25Okapi, list[str], list[dict
     tokenized = [_tokenize(doc) for doc in all_data["documents"]]
     _bm25_index = BM25Okapi(tokenized)
     _bm25_corpus_size = current_size
+    _bm25_store_id = store_id
 
     return _bm25_index, _bm25_doc_ids, _bm25_metadatas
 
@@ -82,7 +89,7 @@ def query_rag(
 ) -> RAGResult | None:
     """Hybrid search: vector similarity + BM25 keyword matching with RRF fusion."""
     settings = get_settings()
-    store = VectorStore()
+    store = get_store()
 
     if store.count() == 0:
         return None
@@ -188,7 +195,7 @@ def query_rag(
 def create_query_fn() -> Callable[[str, str | None], RAGResult | None] | None:
     """Create a query function if there are ingested documents, else return None."""
     try:
-        store = VectorStore()
+        store = get_store()
         if store.count() == 0:
             return None
     except Exception:

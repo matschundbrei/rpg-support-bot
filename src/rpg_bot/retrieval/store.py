@@ -56,7 +56,7 @@ class VectorStore:
 
     def list_sources(self) -> list[str]:
         try:
-            results = self.collection.get(include=["metadatas"], limit=10000)
+            results = self.collection.get(include=["metadatas"])
         except Exception:
             return []
         sources = set()
@@ -85,3 +85,24 @@ class VectorStore:
 
     def count(self) -> int:
         return self.collection.count()
+
+
+_store: VectorStore | None = None
+
+
+def get_store() -> VectorStore:
+    """Return the process-wide VectorStore singleton.
+
+    Opening a ChromaDB PersistentClient is expensive, so it is created once
+    and reused across requests instead of per call.
+    """
+    global _store
+    if _store is None:
+        _store = VectorStore()
+    return _store
+
+
+def reset_store() -> None:
+    """Drop the singleton (used by tests)."""
+    global _store
+    _store = None

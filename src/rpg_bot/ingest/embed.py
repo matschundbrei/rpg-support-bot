@@ -10,7 +10,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rpg_bot.config import get_settings
 from rpg_bot.ingest.chunker import chunk_pages
 from rpg_bot.ingest.extract import extract_pdf
-from rpg_bot.retrieval.store import VectorStore
+from rpg_bot.retrieval.store import VectorStore, get_store
 
 console = Console()
 
@@ -108,7 +108,7 @@ def ingest_pdf(pdf_path: Path, store: VectorStore) -> int:
 def ingest_sourcebooks(path: str | None = None) -> None:
     """Scan sourcebooks directory (or specific path) and ingest new PDFs."""
     settings = get_settings()
-    store = VectorStore()
+    store = get_store()
 
     if path:
         target = Path(path)
