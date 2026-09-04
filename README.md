@@ -24,7 +24,7 @@ And I got somewhere. The result is clearly not perfect, but its a lot more "work
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
-- A local embedding model served via [LM Studio](https://lmstudio.ai/), [Ollama](https://ollama.com/), or any OpenAI-compatible API (default model: `nomic-embed-text-v1.5`)
+- A local embedding model served via [LM Studio](https://lmstudio.ai/), [Ollama](https://ollama.com/), or any OpenAI-compatible API (default model: `nomic-embed-text-v2-moe:latest`)
 - One of the following for the LLM:
   - An [Anthropic API key](https://console.anthropic.com/) for Claude (default), **or**
   - An [OpenAI API key](https://platform.openai.com/api-keys) for GPT models, **or**
@@ -34,8 +34,8 @@ And I got somewhere. The result is clearly not perfect, but its a lot more "work
 
 ```bash
 # Clone and enter the project
-git clone https://codeberg.org/maub/rpg-bot.git
-cd rpg-bot
+git clone https://github.com/matschundbrei/rpg-support-bot.git
+cd rpg-support-bot
 
 # Copy config files and add your API key(s)
 cp .env.example .env
@@ -49,16 +49,18 @@ uv sync
 
 ### Embedding Model
 
-Start LM Studio (or Ollama) and load an embedding model. The default config expects `text-embedding-nomic-embed-text-v1.5` on `http://localhost:1234`. Any server with an OpenAI-compatible `/v1/embeddings` endpoint works:
+Start LM Studio (or Ollama) and load an embedding model. The default config expects `nomic-embed-text-v2-moe:latest` on Ollama at `http://localhost:11434`. Any server with an OpenAI-compatible `/v1/embeddings` endpoint works:
 
 ```yaml
 embeddings:
-  model: "text-embedding-nomic-embed-text-v1.5"
-  base_url: "http://localhost:1234/v1"     # LM Studio
-  # base_url: "http://localhost:11434/v1"  # Ollama
+  model: "nomic-embed-text-v2-moe:latest"
+  base_url: "http://localhost:11434/v1"     # Ollama
+  # base_url: "http://localhost:1234/v1"    # LM Studio
 ```
 
-For Ollama, pull the model first: `ollama pull nomic-embed-text`
+> **Note:** The embedding model must match the one used to ingest your existing corpus, otherwise similarity scores become meaningless. If you switch models, re-run `rpg-bot ingest` after clearing the store.
+
+For Ollama, pull the model first: `ollama pull nomic-embed-text-v2-moe`
 
 ## Adding Source Books
 
@@ -104,7 +106,7 @@ uv run rpg-bot chat -s shadowrun6
 In-chat commands:
 - `/system <name>` -- set game system filter (e.g. `/system dnd5e`)
 - `/system` -- clear the filter
-- `/sources` -- show active filter
+- `/sources` -- list ingested sources and the active filter
 - `/clear` -- reset conversation history
 - `/quit` -- exit
 
@@ -127,6 +129,16 @@ Use `--port` to change the port, e.g. `uv run rpg-bot serve --port 3000`.
 
 The same server exposes an OpenAI-compatible API at `http://localhost:8000/v1`. Point any compatible client at this URL to use the RAG pipeline with your own chat frontend.
 
+#### Authentication (optional)
+
+By default the server is open on localhost. If you bind it to a network interface (`--host 0.0.0.0`) or expose it otherwise, set `API_KEY` in `.env` to require a bearer token:
+
+```
+API_KEY=some-long-random-string
+```
+
+With `API_KEY` set, all `/v1/*` and `/api/*` requests must send `Authorization: Bearer <API_KEY>`. The built-in web UI keeps working: it prompts once for the key and stores it in the browser's localStorage.
+
 ### List ingested books
 
 ```bash
@@ -146,8 +158,8 @@ llm:
   # base_url: "http://localhost:1234/v1"  # only used with "openai" backend
 
 embeddings:
-  model: "text-embedding-nomic-embed-text-v1.5"
-  base_url: "http://localhost:1234/v1"
+  model: "nomic-embed-text-v2-moe:latest"
+  base_url: "http://localhost:11434/v1"    # Ollama
 
 chunking:
   chunk_size: 1500
@@ -218,7 +230,7 @@ PDF source books
   -> Split pages into sections at heading boundaries
   -> Chunk sections with recursive character splitter + overlap
   -> Prepend breadcrumb context ([Source > Section]) to each chunk
-  -> Embed chunks via OpenAI-compatible API (batches of 64)
+  -> Embed chunks via OpenAI-compatible API (batches of 16)
   -> Store in ChromaDB with metadata (source, page, game system, language, section)
 ```
 
