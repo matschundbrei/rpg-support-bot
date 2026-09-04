@@ -11,3 +11,8 @@ data/
 sourcebooks/**/*.pdf
 .DS_Store
 .claude/
+
+# coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
