@@ -33,22 +33,22 @@ class LLMConfig(BaseSettings):
 
 class EmbeddingsConfig(BaseSettings):
     model: str = _yaml.get("embeddings", {}).get(
-        "model", "text-embedding-nomic-embed-text-v1.5"
+        "model", "nomic-embed-text-v2-moe:latest"
     )
     base_url: str = _yaml.get("embeddings", {}).get(
-        "base_url", "http://localhost:1234/v1"
+        "base_url", "http://localhost:11434/v1"
     )
 
 
 class ChunkingConfig(BaseSettings):
-    chunk_size: int = _yaml.get("chunking", {}).get("chunk_size", 1000)
+    chunk_size: int = _yaml.get("chunking", {}).get("chunk_size", 1500)
     chunk_overlap: int = _yaml.get("chunking", {}).get("chunk_overlap", 200)
 
 
 class RetrievalConfig(BaseSettings):
-    top_k: int = _yaml.get("retrieval", {}).get("top_k", 8)
+    top_k: int = _yaml.get("retrieval", {}).get("top_k", 15)
     relevance_threshold: float = _yaml.get("retrieval", {}).get(
-        "relevance_threshold", 0.3
+        "relevance_threshold", 1.0
     )
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
@@ -54,7 +55,7 @@ def _render_citations(text: str, source_map: dict[str, str]) -> Text:
 
 
 def run_chat(
-    query_fn: callable | None = None,
+    query_fn: Callable | None = None,
     game_system: str | None = None,
 ) -> None:
     """Run the interactive CLI chat loop.
@@ -89,10 +90,19 @@ def run_chat(
             continue
 
         if user_input.lower() == "/sources":
-            if query_fn is None:
+            console.print(f"[dim]Active game system filter: {current_system or 'none (all systems)'}[/dim]")
+            try:
+                from rpg_bot.retrieval.store import get_store
+
+                sources = get_store().list_sources()
+            except Exception:
+                sources = []
+            if not sources:
                 console.print("[dim]No source books ingested. Run: rpg-bot ingest[/dim]")
             else:
-                console.print(f"[dim]Active game system filter: {current_system or 'none (all systems)'}[/dim]")
+                console.print(f"[dim]Ingested sources ({len(sources)}):[/dim]")
+                for src in sources:
+                    console.print(f"[dim]  - {src}[/dim]")
             continue
 
         if user_input.lower().startswith("/system"):

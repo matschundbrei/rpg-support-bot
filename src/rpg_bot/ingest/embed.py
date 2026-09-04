@@ -16,6 +16,8 @@ console = Console()
 
 from rpg_bot.embeddings import embed_texts
 
+EMBED_BATCH_SIZE = 16
+
 
 def _file_hash(path: Path) -> str:
     h = hashlib.sha256()
@@ -26,10 +28,16 @@ def _file_hash(path: Path) -> str:
 
 
 def _guess_game_system(path: Path) -> str:
-    """Guess game system from directory structure (e.g., sourcebooks/dnd5e/phb.pdf)."""
+    """Guess game system from directory structure (e.g. sourcebooks/dnd5e/phb.pdf).
+
+    Uses the configured sourcebooks directory name as the anchor, so custom
+    sourcebooks_directory settings keep working.
+    """
+    settings = get_settings()
+    anchor = Path(settings.sourcebooks_directory).name
     parts = path.parts
     try:
-        sb_idx = parts.index("sourcebooks")
+        sb_idx = parts.index(anchor)
         if sb_idx + 1 < len(parts) - 1:  # there's a subdirectory
             return parts[sb_idx + 1]
     except ValueError:
@@ -74,7 +82,7 @@ def ingest_pdf(pdf_path: Path, store: VectorStore) -> int:
         console=console,
     ) as progress:
         task = progress.add_task("Embedding chunks...", total=len(texts))
-        batch_size = 16
+        batch_size = EMBED_BATCH_SIZE
         all_embeddings: list[list[float]] = []
 
         for i in range(0, len(texts), batch_size):
