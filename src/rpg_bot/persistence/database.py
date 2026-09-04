@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _DB_PATH = _PROJECT_ROOT / "data" / "chats.db"
 
-_connection: sqlite3.Connection | None = None
+_local = threading.local()
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS chats (
@@ -32,16 +33,20 @@ CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id);
 
 
 def get_db() -> sqlite3.Connection:
-    """Return a singleton SQLite connection, creating the schema on first call."""
-    global _connection
-    if _connection is not None:
-        return _connection
+    """Return this thread's SQLite connection, creating the schema on first call.
+
+    FastAPI runs sync endpoints in a threadpool, so each worker thread gets
+    its own connection (SQLite connections are not safe to share across threads).
+    """
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
+        return conn
 
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_DB_PATH), check_same_thread=False)
+    conn = sqlite3.connect(str(_DB_PATH), check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(_SCHEMA)
-    _connection = conn
-    return _connection
+    _local.conn = conn
+    return conn

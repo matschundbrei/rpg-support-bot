@@ -39,6 +39,12 @@ def create_chat(game_system: str | None = None) -> dict:
             "created_at": now, "updated_at": now}
 
 
+def chat_exists(chat_id: str) -> bool:
+    db = get_db()
+    row = db.execute("SELECT 1 FROM chats WHERE id = ?", (chat_id,)).fetchone()
+    return row is not None
+
+
 def get_chat(chat_id: str) -> dict | None:
     db = get_db()
     chat = db.execute(
@@ -51,7 +57,7 @@ def get_chat(chat_id: str) -> dict | None:
 
     messages = db.execute(
         "SELECT id, role, content, created_at "
-        "FROM messages WHERE chat_id = ? ORDER BY created_at",
+        "FROM messages WHERE chat_id = ? ORDER BY created_at, rowid",
         (chat_id,),
     ).fetchall()
 
