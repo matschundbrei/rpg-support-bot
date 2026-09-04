@@ -1,7 +1,17 @@
 from __future__ import annotations
 
+import warnings
+
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# PyMuPDF's macOS wheels are built with SWIG 4.3.1, whose generated
+# types lack __module__ and trigger these harmless import-time
+# warnings (pymupdf/PyMuPDF#3931).
+warnings.filterwarnings(
+    "ignore",
+    message=r"builtin type (SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute",
+)
 
 import pymupdf
 
