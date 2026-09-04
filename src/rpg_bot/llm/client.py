@@ -13,6 +13,7 @@ class LLMClient:
         self.model = settings.llm.model
         self.max_tokens = settings.llm.max_tokens
         self.temperature = settings.llm.temperature
+        self.max_history = settings.llm.max_history
         self.history: list[dict[str, str]] = []
 
         if self.backend == "anthropic":
@@ -66,23 +67,40 @@ class LLMClient:
             if delta.content:
                 yield delta.content
 
+    def _trim_history(self) -> None:
+        """Keep only the most recent max_history messages, preserving pairs."""
+        if self.max_history > 0 and len(self.history) > self.max_history:
+            self.history = self.history[-self.max_history :]
+            # The first message sent to the API must be a user message
+            if self.history and self.history[0]["role"] != "user":
+                self.history.pop(0)
+
     def chat_stream(
         self,
         user_message: str,
         context: str | None = None,
     ) -> Generator[str, None, None]:
         self.history.append({"role": "user", "content": user_message})
+        self._trim_history()
         system = self._get_system_prompt(context)
 
         full_response = ""
-        if self.backend == "anthropic":
-            streamer = self._stream_anthropic(system, self.history)
-        else:
-            streamer = self._stream_openai(system, self.history)
+        try:
+            if self.backend == "anthropic":
+                streamer = self._stream_anthropic(system, self.history)
+            else:
+                streamer = self._stream_openai(system, self.history)
 
-        for text in streamer:
-            full_response += text
-            yield text
+            for text in streamer:
+                full_response += text
+                yield text
+        except Exception:
+            # Roll back the user message so a failed call doesn't leave a
+            # dangling user turn (the next call would send two consecutive
+            # user messages, which the APIs reject).
+            if self.history and self.history[-1]["role"] == "user":
+                self.history.pop()
+            raise
 
         self.history.append({"role": "assistant", "content": full_response})
 

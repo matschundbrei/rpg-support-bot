@@ -27,6 +27,8 @@ class LLMConfig(BaseSettings):
     max_tokens: int = _yaml.get("llm", {}).get("max_tokens", 4096)
     temperature: float = _yaml.get("llm", {}).get("temperature", 0.3)
     base_url: str = _yaml.get("llm", {}).get("base_url", "")
+    # Max conversation messages kept in the rolling CLI history
+    max_history: int = _yaml.get("llm", {}).get("max_history", 20)
 
 
 class EmbeddingsConfig(BaseSettings):
