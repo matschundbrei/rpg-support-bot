@@ -194,8 +194,16 @@ def _call_llm_stream(
                 yield delta.content
 
 
-def _make_chunk_bytes(chunk_id: str, content: str, finish: bool = False) -> bytes:
+def _make_chunk_bytes(
+    chunk_id: str, content: str, finish: bool = False, role: str | None = None
+) -> bytes:
     """Format a single SSE chunk in OpenAI format."""
+    if finish:
+        delta: dict = {}
+    elif role is not None:
+        delta = {"role": role, "content": content}
+    else:
+        delta = {"content": content}
     data = {
         "id": chunk_id,
         "object": "chat.completion.chunk",
@@ -204,7 +212,7 @@ def _make_chunk_bytes(chunk_id: str, content: str, finish: bool = False) -> byte
         "choices": [
             {
                 "index": 0,
-                "delta": {} if finish else {"content": content},
+                "delta": delta,
                 "finish_reason": "stop" if finish else None,
             }
         ],
@@ -269,7 +277,6 @@ def delete_chat(chat_id: str):
 @app.get("/v1/models")
 def list_models():
     """Return available models so Open WebUI can discover us."""
-    game_systems = _get_game_systems()
     models = [
         {
             "id": MODEL_ID,
@@ -292,6 +299,11 @@ def chat_completions(request: ChatCompletionRequest):
 
     # RAG retrieval
     user_query = _extract_user_query(request.messages)
+
+    # Validate chat_id before doing any work
+    if request.chat_id and not repo.chat_exists(request.chat_id):
+        raise HTTPException(status_code=404, detail="Chat not found")
+
     rag_result = query_rag(user_query, game_system=request.game_system)
     context = rag_result.context if rag_result else None
     system_prompt = _get_system_prompt(context)
@@ -308,6 +320,8 @@ def chat_completions(request: ChatCompletionRequest):
 
         def event_stream():
             full_response = ""
+            # First chunk carries the assistant role, per the OpenAI protocol
+            yield _make_chunk_bytes(chunk_id, "", role="assistant")
             for text in _call_llm_stream(messages, temperature, max_tokens):
                 full_response += text
                 yield _make_chunk_bytes(chunk_id, text)
@@ -329,6 +343,10 @@ def chat_completions(request: ChatCompletionRequest):
     if request.chat_id:
         repo.add_message(request.chat_id, "assistant", full)
 
+    # Rough token estimates (~4 chars/token) so clients get sane stats
+    prompt_chars = sum(len(m["content"]) for m in messages)
+    completion_tokens = max(1, len(full) // 4)
+
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
         "object": "chat.completion",
@@ -341,7 +359,11 @@ def chat_completions(request: ChatCompletionRequest):
                 "finish_reason": "stop",
             }
         ],
-        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "usage": {
+            "prompt_tokens": max(1, prompt_chars // 4),
+            "completion_tokens": completion_tokens,
+            "total_tokens": max(1, prompt_chars // 4) + completion_tokens,
+        },
     }
 
 
