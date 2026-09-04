@@ -46,6 +46,12 @@ def cmd_list(args: argparse.Namespace) -> None:
         print(f"  - {src}")
 
 
+def cmd_setup(args: argparse.Namespace) -> None:
+    from rpg_bot.cli.setup import run_setup
+
+    run_setup()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="rpg-bot",
@@ -68,6 +74,7 @@ def main() -> None:
     )
 
     sub.add_parser("list", help="List ingested source books")
+    sub.add_parser("setup", help="Interactive configuration wizard (writes config.yaml and .env)")
 
     args = parser.parse_args()
 
@@ -83,6 +90,8 @@ def main() -> None:
         cmd_serve(args)
     elif args.command == "list":
         cmd_list(args)
+    elif args.command == "setup":
+        cmd_setup(args)
 
 
 if __name__ == "__main__":

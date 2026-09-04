@@ -16,6 +16,7 @@ uv run pytest -k test_split_text_short  # Run a single test
 uv run ruff check --fix .        # Lint (auto-fix)
 uv run ruff format .             # Format
 
+uv run rpg-bot setup             # Interactive setup wizard (writes config.yaml + .env)
 uv run rpg-bot ingest            # Ingest all PDFs from sourcebooks/
 uv run rpg-bot chat              # CLI chat
 uv run rpg-bot chat -s dnd5e     # CLI chat filtered to a game system
@@ -54,7 +55,7 @@ The pipeline flows: **PDF extraction → chunking → embedding → ChromaDB sto
 
 ## Configuration
 
-- `config.example.yaml` — Template with all tunable parameters. Copy to `config.yaml` for local use (gitignored).
+- `config.example.yaml` — Template with all tunable parameters. Copy to `config.yaml` for local use (gitignored), or run `rpg-bot setup` for an interactive wizard.
 - `config.yaml` — Local config (not committed): LLM backend/model, embeddings server, chunk size/overlap, top_k, relevance threshold, ChromaDB path, etc.
 - `.env` — `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` depending on configured backends, plus optional `API_KEY` to protect the API server (loaded by pydantic-settings)
 - Config classes in `config.py` merge YAML defaults with env var overrides
