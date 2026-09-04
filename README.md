@@ -14,12 +14,15 @@ A RAG-powered assistant for tabletop RPG players and game masters. Ask questions
 
 ## Vibe Code Warning
 
-This repositorys contents are vibe coded with [claude code](./CLAUDE.md) after I've watched a few articles rolling by, claiming that Claude Opus 4.6 "shockingly" good. I have chosen this particular topic,
-because I wanted to do something from scratch, that I've previously attempted mysel but failed miserably to have a somewhat fair albeit very subjective comparsion.
+This repository's contents are "vibe coded" with several different coding harnesses.
 
-The "wasted hours" counter for me was at about ~60, when I dropped this during my last vacation, this here took me about 6 to 10 hours and approximately 400k tokens.
+I have previously attempted to do this on my own, with little success.
 
-And I got somewhere. The result is clearly not perfect, but its a lot more "works for me" than what I had before.
+My 'wasted hours' counter on solo attempts had hit about 60 before I dropped the project during my last vacation. This version — built with the coding harnesses — took me about 6 to 10 hours and approximately 400k tokens.
+
+And I got somewhere. The result is clearly not perfect, but it's a lot more "works for me" than what I had before.
+
+I will extend this codebase and continuously review and upgrade it while testing new models and harnesses. Also feel free to fork or contribute via PRs.
 
 ## Prerequisites
 
