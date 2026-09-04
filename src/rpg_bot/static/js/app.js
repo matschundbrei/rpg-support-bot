@@ -14,8 +14,10 @@ function chatApp() {
     sidebarOpen: true,
     editingTitle: null,
     editTitleValue: '',
+    apiKey: null,
 
     async init() {
+      this.apiKey = localStorage.getItem('apiKey');
       await this.loadGameSystems();
       await this.loadChats();
 
@@ -26,9 +28,24 @@ function chatApp() {
       }
     },
 
+    async apiFetch(path, opts = {}, retried = false) {
+      const headers = { ...(opts.headers || {}) };
+      if (this.apiKey) headers['Authorization'] = 'Bearer ' + this.apiKey;
+      const resp = await window.fetch(path, { ...opts, headers });
+      if (resp.status === 401 && !retried) {
+        const key = prompt('This server requires an API key (API_KEY in .env). Enter it:');
+        if (key && key.trim()) {
+          localStorage.setItem('apiKey', key.trim());
+          this.apiKey = key.trim();
+          return this.apiFetch(path, opts, true);
+        }
+      }
+      return resp;
+    },
+
     async loadGameSystems() {
       try {
-        const resp = await fetch('/api/game-systems');
+        const resp = await this.apiFetch('/api/game-systems');
         const data = await resp.json();
         this.gameSystems = data.game_systems || [];
       } catch (e) {
@@ -38,7 +55,7 @@ function chatApp() {
 
     async loadChats() {
       try {
-        const resp = await fetch('/api/chats');
+        const resp = await this.apiFetch('/api/chats');
         this.chats = await resp.json();
       } catch (e) {
         console.error('Failed to load chats:', e);
@@ -47,7 +64,7 @@ function chatApp() {
 
     async newChat() {
       try {
-        const resp = await fetch('/api/chats', {
+        const resp = await this.apiFetch('/api/chats', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ game_system: this.activeGameSystem }),
@@ -66,7 +83,7 @@ function chatApp() {
       localStorage.setItem('activeChatId', id);
 
       try {
-        const resp = await fetch(`/api/chats/${id}`);
+        const resp = await this.apiFetch(`/api/chats/${id}`);
         const chat = await resp.json();
         this.messages = chat.messages || [];
         this.activeGameSystem = chat.game_system;
@@ -78,7 +95,7 @@ function chatApp() {
 
     async deleteChat(id) {
       try {
-        await fetch(`/api/chats/${id}`, { method: 'DELETE' });
+        await this.apiFetch(`/api/chats/${id}`, { method: 'DELETE' });
         this.chats = this.chats.filter(c => c.id !== id);
         if (this.activeChatId === id) {
           this.activeChatId = null;
@@ -93,7 +110,7 @@ function chatApp() {
       this.activeGameSystem = gameSystem || null;
       if (!this.activeChatId) return;
       try {
-        await fetch(`/api/chats/${this.activeChatId}`, {
+        await this.apiFetch(`/api/chats/${this.activeChatId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ game_system: this.activeGameSystem }),
@@ -116,7 +133,7 @@ function chatApp() {
       this.editingTitle = null;
       if (!this.editTitleValue.trim()) return;
       try {
-        const resp = await fetch(`/api/chats/${chatId}`, {
+        const resp = await this.apiFetch(`/api/chats/${chatId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: this.editTitleValue.trim() }),
@@ -152,7 +169,7 @@ function chatApp() {
       }));
 
       try {
-        const resp = await fetch('/v1/chat/completions', {
+        const resp = await this.apiFetch('/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

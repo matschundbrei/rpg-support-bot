@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import time
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -34,6 +35,37 @@ def configure_cors(origins: list[str]) -> None:
 
 MODEL_ID = "rpg-bot"
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+# Paths that never require authentication (UI shell + static assets)
+_PUBLIC_PREFIXES = ("/", "/static")
+
+
+def _check_auth(request: Request) -> bool:
+    """Return True if the request is allowed. Auth is only enforced when
+    API_KEY is set in .env; otherwise the server stays open (backward compat)."""
+    key = get_settings().api_key
+    if not key:
+        return True
+    path = request.url.path
+    if path in _PUBLIC_PREFIXES or path.startswith("/static") or path in (
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+    ):
+        return True
+    auth = request.headers.get("authorization", "")
+    expected = f"Bearer {key}"
+    return hmac.compare_digest(auth, expected)
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if not _check_auth(request):
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Invalid or missing API key. Send: Authorization: Bearer <key>"},
+        )
+    return await call_next(request)
 
 
 # --- Request / Response schemas (OpenAI-compatible subset) ---

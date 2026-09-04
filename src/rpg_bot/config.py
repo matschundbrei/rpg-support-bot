@@ -77,6 +77,9 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = Field(default="")
     openai_api_key: str = Field(default="")
+    # Optional bearer key protecting the API server (/v1 and /api endpoints).
+    # Empty = no auth (default, backward compatible). Set via API_KEY in .env.
+    api_key: str = Field(default="")
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
