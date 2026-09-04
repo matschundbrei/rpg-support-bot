@@ -231,7 +231,10 @@ function chatApp() {
     renderMarkdown(text) {
       if (!text) return '';
       const html = marked.parse(text, { breaks: true });
-      return linkifyCitations(html);
+      const clean = window.DOMPurify
+        ? DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
+        : html;
+      return linkifyCitations(clean);
     },
 
     scrollToBottom() {
