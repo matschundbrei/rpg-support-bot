@@ -16,10 +16,269 @@ import pymupdf  # noqa: E402  # must follow warnings.filterwarnings above
 
 
 @dataclass
+class TableItem:
+    title: str
+    markdown: str
+    page_number: int
+    section: str = ""
+    headers: list[str] = field(default_factory=list)
+    rows: list[list[str]] = field(default_factory=list)
+
+
+@dataclass
 class PageContent:
     page_number: int
     text: str
     headings: list[str] = field(default_factory=list)
+    tables: list[TableItem] = field(default_factory=list)
+
+
+KNOWN_TABLE_HEADERS = {
+    # Weapons & Combat
+    "WAFFE",
+    "WEAPON",
+    "WEAPONS",
+    "ART",
+    "TYPE",
+    "SCHADEN",
+    "DAMAGE",
+    "DV",
+    "MODUS",
+    "MODE",
+    "ANGRIFFSWERT",
+    "ANGRIFFSWERTE",
+    "ATTACK RATING",
+    "MUNITION",
+    "AMMO",
+    "VERFÜGBARKEIT",
+    "VERFÜGB.",
+    "VERF.",
+    "AVAIL",
+    "AVAILABILITY",
+    "PREIS",
+    "PRICE",
+    "KOSTEN",
+    "COST",
+    "REICHWEITE",
+    "RANGE",
+    "GRANATE",
+    "GRENADE",
+    "SPRENGWIRKUNG",
+    "BLAST",
+    "RADIUS",
+    "ZUBEHÖR",
+    "ACCESSORY",
+    "HALTERUNG",
+    "MOUNT",
+    "ENERGIEEINHEITEN",
+    # Armor & Defense
+    "RÜSTUNG",
+    "ARMOR",
+    "PANZERUNG",
+    "PANZ.",
+    "V.-WERT",
+    "VERTEIDIGUNGSWERT",
+    "DEFENSE RATING",
+    "SOZIAL",
+    "SOCIAL",
+    # Magic, Matrix, Equipment
+    "KAPAZITÄT",
+    "KAP.",
+    "CAPACITY",
+    "STUFE",
+    "LEVEL",
+    "RATING",
+    "WÜRFELPOOL",
+    "DICE POOL",
+    "HANDLUNG",
+    "ACTION",
+    "HANDLUNGSART",
+    "DAUER",
+    "DURATION",
+    "ENTZUG",
+    "DRAIN",
+    "SLOTS",
+    "PROGRAMMSLOTS",
+    "GS",
+    "DEVICE RATING",
+    "ASDF",
+    "AUFLÖSUNG",
+    "AUSDEHNUNG",
+    "OPTION",
+    "GEGENSTAND",
+    "ITEM",
+    "NAME",
+    "TYP",
+    "WOFÜR?",
+    # Attributes, Stats & Mechanics
+    "KONSTITUTION",
+    "GESCHICKLICHKEIT",
+    "REAKTION",
+    "STÄRKE",
+    "WILLENSKRAFT",
+    "LOGIK",
+    "INTUITION",
+    "CHARISMA",
+    "EDGE",
+    "ESSENZ",
+    "MAGIE",
+    "STR",
+    "DEX",
+    "CON",
+    "INT",
+    "WIS",
+    "CHA",
+    "HP",
+    "AC",
+    "CR",
+    "METAVARIANTE",
+    "FAHNDUNGSSTUFE",
+    "AUSWIRKUNG",
+    "KARMAKOSTEN",
+    "TRAININGSZEIT",
+    "REPUTATION",
+    "REPUTATIONS-ÄNDERUNG",
+    "SENSOR",
+    "PILOT",
+    "RUMPF",
+    "BODY",
+    "SPEED",
+    "BESCHL.",
+    "GESCHW.",
+    "HÖCHSTG.",
+    "G.INTV.",
+    "HANDL.",
+    "HANDL. (S/G)",
+}
+
+
+def _is_header_candidate(line: str) -> bool:
+    line_clean = line.strip().upper().replace(":", "").replace("*", "")
+    if line_clean in KNOWN_TABLE_HEADERS:
+        return True
+    words = [w.strip() for w in line_clean.split()]
+    if any(w in KNOWN_TABLE_HEADERS for w in words):
+        return True
+    return bool(line.isupper() and 1 < len(line) < 25 and not any(c.isdigit() for c in line))
+
+
+def _parse_block_table(lines: list[str]) -> tuple[list[str], list[list[str]]] | None:
+    if len(lines) < 4:
+        return None
+
+    headers: list[str] = []
+    for line in lines:
+        if _is_header_candidate(line):
+            headers.append(line)
+        else:
+            break
+
+    if len(headers) < 2:
+        return None
+
+    if not any(
+        h.strip().upper().replace(":", "").replace("*", "") in KNOWN_TABLE_HEADERS
+        or any(w in KNOWN_TABLE_HEADERS for w in h.strip().upper().split())
+        for h in headers
+    ):
+        return None
+
+    num_cols = len(headers)
+    data = lines[num_cols:]
+    if not data:
+        return None
+
+    num_rows = len(data) // num_cols
+    if num_rows < 1:
+        return None
+
+    rows: list[list[str]] = []
+    for r in range(num_rows):
+        rows.append(data[r * num_cols : (r + 1) * num_cols])
+    remainder = data[num_rows * num_cols :]
+    if remainder:
+        padded = remainder + ["–"] * (num_cols - len(remainder))
+        rows.append(padded)
+
+    return headers, rows
+
+
+def _format_markdown_table(title: str, headers: list[str], rows: list[list[str]]) -> str:
+    out: list[str] = []
+    if title:
+        out.append(f"### Tabelle: {title}")
+    out.append("| " + " | ".join(headers) + " |")
+    out.append("| " + " | ".join(["---"] * len(headers)) + " |")
+    for row in rows:
+        clean_row = [str(c).replace("|", "/").replace("\n", " ").strip() for c in row]
+        out.append("| " + " | ".join(clean_row) + " |")
+    return "\n".join(out)
+
+
+def _extract_tables(page: pymupdf.Page, page_number: int, headings: list[str]) -> list[TableItem]:
+    tables: list[TableItem] = []
+    tab_rects: list[pymupdf.Rect] = []
+
+    # 1. Built-in find_tables for bordered/grid tables
+    try:
+        page_tabs = page.find_tables()
+        if page_tabs and page_tabs.tables:
+            for tab in page_tabs.tables:
+                extracted = tab.extract()
+                if not extracted or len(extracted) < 2:
+                    continue
+                raw_headers = [str(c).strip().replace("\n", " ") if c else "" for c in extracted[0]]
+                raw_rows = [
+                    [str(c).strip().replace("\n", " ") if c else "" for c in row]
+                    for row in extracted[1:]
+                ]
+                if len(raw_headers) >= 2 and any(raw_headers) and raw_rows:
+                    title = headings[-1] if headings else ""
+                    md = _format_markdown_table(title, raw_headers, raw_rows)
+                    tables.append(
+                        TableItem(
+                            title=title,
+                            markdown=md,
+                            page_number=page_number,
+                            section=title,
+                            headers=raw_headers,
+                            rows=raw_rows,
+                        )
+                    )
+                    tab_rects.append(pymupdf.Rect(tab.bbox))
+    except Exception:
+        pass
+
+    # 2. Block-based table detection for borderless RPG tables
+    blocks = page.get_text("blocks")
+    for i, b in enumerate(blocks):
+        b_rect = pymupdf.Rect(b[:4])
+        if any(b_rect.intersects(tr) for tr in tab_rects):
+            continue
+
+        lines = [line_item.strip() for line_item in b[4].split("\n") if line_item.strip()]
+        res = _parse_block_table(lines)
+        if res:
+            headers, rows = res
+            title = ""
+            if i > 0 and len(blocks[i - 1][4].strip().split("\n")) <= 2:
+                title = blocks[i - 1][4].strip()
+            if not title and headings:
+                title = headings[-1]
+
+            md = _format_markdown_table(title, headers, rows)
+            tables.append(
+                TableItem(
+                    title=title,
+                    markdown=md,
+                    page_number=page_number,
+                    section=title,
+                    headers=headers,
+                    rows=rows,
+                )
+            )
+
+    return tables
 
 
 def _is_heading(span: dict, page_avg_size: float) -> bool:
@@ -115,12 +374,14 @@ def extract_pdf(pdf_path: Path) -> list[PageContent]:
 
         # Use dict extraction only for heading detection
         headings = _extract_headings(page)
+        tables = _extract_tables(page, page_num + 1, headings)
 
         pages.append(
             PageContent(
                 page_number=page_num + 1,
                 text=full_text,
                 headings=headings,
+                tables=tables,
             )
         )
 

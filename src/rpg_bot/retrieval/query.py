@@ -38,9 +38,168 @@ _bm25_store_id: int | None = None
 
 _TOKENIZE_RE = re.compile(r"\w+", re.UNICODE)
 
+_CONVERSATIONAL_STOPWORDS = {
+    # German conversational filler / question words
+    "schau",
+    "bitte",
+    "mal",
+    "welche",
+    "welcher",
+    "welches",
+    "welchen",
+    "welchem",
+    "was",
+    "wer",
+    "wie",
+    "wo",
+    "wann",
+    "warum",
+    "wieso",
+    "weshalb",
+    "gibt",
+    "macht",
+    "kann",
+    "kannst",
+    "können",
+    "könnte",
+    "könntest",
+    "haben",
+    "hat",
+    "hatte",
+    "hätte",
+    "sein",
+    "ist",
+    "sind",
+    "war",
+    "wäre",
+    "werden",
+    "wird",
+    "wurde",
+    "würde",
+    "und",
+    "oder",
+    "aber",
+    "den",
+    "dem",
+    "der",
+    "die",
+    "das",
+    "des",
+    "ein",
+    "eine",
+    "einer",
+    "eines",
+    "einem",
+    "einen",
+    "für",
+    "mit",
+    "von",
+    "aus",
+    "bei",
+    "nach",
+    "über",
+    "unter",
+    "vor",
+    "zwischen",
+    "durch",
+    "ohne",
+    "gegen",
+    "ich",
+    "du",
+    "er",
+    "sie",
+    "es",
+    "wir",
+    "ihr",
+    "mich",
+    "dich",
+    "ihn",
+    "uns",
+    "euch",
+    "ihnen",
+    "mir",
+    "dir",
+    "ihm",
+    "mein",
+    "dein",
+    "unser",
+    "euer",
+    "auch",
+    "noch",
+    "schon",
+    "nur",
+    "sehr",
+    "viel",
+    "viele",
+    "mehr",
+    "meisten",
+    "größten",
+    "besten",
+    "suche",
+    "finde",
+    "zeige",
+    "erkläre",
+    "sage",
+    "sag",
+    # English conversational filler / question words
+    "the",
+    "and",
+    "or",
+    "but",
+    "what",
+    "which",
+    "who",
+    "whom",
+    "whose",
+    "where",
+    "when",
+    "why",
+    "how",
+    "can",
+    "could",
+    "would",
+    "should",
+    "will",
+    "shall",
+    "may",
+    "might",
+    "must",
+    "is",
+    "are",
+    "were",
+    "be",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "tell",
+    "show",
+    "give",
+    "find",
+    "look",
+    "please",
+    "about",
+    "with",
+    "from",
+    "for",
+    "into",
+    "through",
+}
+
 
 def _tokenize(text: str) -> list[str]:
     return [w for w in _TOKENIZE_RE.findall(text.lower()) if len(w) > 2]
+
+
+def _tokenize_query(query: str) -> list[str]:
+    """Tokenize user query, removing conversational filler words for better BM25 precision."""
+    tokens = _tokenize(query)
+    filtered = [w for w in tokens if w not in _CONVERSATIONAL_STOPWORDS]
+    return filtered if filtered else tokens
 
 
 def _get_bm25_index(store: VectorStore) -> tuple[BM25Okapi, list[str], list[Mapping[str, Any]]]:
@@ -123,7 +282,7 @@ def query_rag(
 
     # 2. BM25 keyword search
     bm25, bm25_ids, bm25_metas = _get_bm25_index(store)
-    query_tokens = _tokenize(user_query)
+    query_tokens = _tokenize_query(user_query)
 
     if query_tokens:
         bm25_scores = bm25.get_scores(query_tokens)
@@ -143,7 +302,7 @@ def query_rag(
         keyword_ranking = {}
 
     # 3. RRF fusion
-    fused_ids = _reciprocal_rank_fusion(vector_ranking, keyword_ranking)[:top_k]
+    fused_ids = _reciprocal_rank_fusion(vector_ranking, keyword_ranking)[:n_candidates]
 
     if not fused_ids:
         return None
@@ -153,10 +312,11 @@ def query_rag(
     id_to_doc = dict(zip(fetched["ids"], fetched["documents"] or [], strict=True))
     id_to_meta = dict(zip(fetched["ids"], fetched["metadatas"] or [], strict=True))
 
-    # 5. Build context, dedup, apply threshold only to vector-only results
+    # 5. Balanced Selection: prioritize relevant tables alongside prose text
     threshold = settings.retrieval.relevance_threshold
-    context_blocks: list[str] = []
-    source_map: dict[str, str] = {}
+    table_quota = min(3, max(1, top_k // 4))
+    text_candidates: list[str] = []
+    table_candidates: list[str] = []
     seen_texts: set[str] = set()
 
     for doc_id in fused_ids:
@@ -177,12 +337,40 @@ def query_rag(
         if not is_keyword_match and dist is not None and dist > threshold:
             continue
 
+        is_table = (
+            str(meta.get("is_table", "")).lower() == "true" or meta.get("content_type") == "table"
+        )
+        if is_table:
+            table_candidates.append(doc_id)
+        else:
+            text_candidates.append(doc_id)
+
+    num_tables = min(len(table_candidates), table_quota)
+    selected_tables = set(table_candidates[:num_tables])
+    selected_texts = set(text_candidates[: (top_k - num_tables)])
+    selected_all = selected_tables | selected_texts
+
+    final_ids = [doc_id for doc_id in fused_ids if doc_id in selected_all][:top_k]
+
+    if not final_ids:
+        return None
+
+    context_blocks: list[str] = []
+    source_map: dict[str, str] = {}
+
+    for doc_id in final_ids:
+        doc = id_to_doc[doc_id]
+        meta = id_to_meta[doc_id]
         source = str(meta.get("source", "Unknown"))
         page = str(meta.get("page", "?"))
         source_path = str(meta.get("source_path") or "")
         idx = len(context_blocks) + 1
 
-        context_blocks.append(f"[{idx}] Source: {source}, p.{page}\n{doc}")
+        is_table = (
+            str(meta.get("is_table", "")).lower() == "true" or meta.get("content_type") == "table"
+        )
+        tag = " [Tabelle]" if is_table else ""
+        context_blocks.append(f"[{idx}] Source: {source}, p.{page}{tag}\n{doc}")
 
         citation_key = f"{source}, p.{page}"
         if citation_key not in source_map and source_path:

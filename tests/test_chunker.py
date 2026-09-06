@@ -1,5 +1,5 @@
-from rpg_bot.ingest.chunker import _split_text, chunk_pages
-from rpg_bot.ingest.extract import PageContent
+from rpg_bot.ingest.chunker import _chunk_table, _split_text, chunk_pages
+from rpg_bot.ingest.extract import PageContent, TableItem, _parse_block_table
 
 
 def test_split_text_short():
@@ -69,3 +69,77 @@ def test_chunk_pages_breadcrumb():
     chunks = chunk_pages(pages, source_name="PHB")
     assert chunks
     assert "PHB > Opportunity Attacks" in chunks[0].text
+
+
+def test_parse_block_table():
+    """Block table parser should extract headers and data rows."""
+    lines = [
+        "WAFFE",
+        "SCHADEN",
+        "PREIS",
+        "Ares Predator VI",
+        "3K",
+        "750 ¥",
+        "Ruger Super Warhawk",
+        "4K",
+        "400 ¥",
+    ]
+    res = _parse_block_table(lines)
+    assert res is not None
+    headers, rows = res
+    assert headers == ["WAFFE", "SCHADEN", "PREIS"]
+    assert len(rows) == 2
+    assert rows[0] == ["Ares Predator VI", "3K", "750 ¥"]
+    assert rows[1] == ["Ruger Super Warhawk", "4K", "400 ¥"]
+
+
+def test_chunk_pages_with_tables():
+    """Table chunks should be extracted with table metadata and markdown structure."""
+    table = TableItem(
+        title="Schwere Pistolen",
+        markdown=(
+            "### Tabelle: Schwere Pistolen\n"
+            "| WAFFE | SCHADEN |\n"
+            "| --- | --- |\n"
+            "| Ares Predator | 3K |"
+        ),
+        page_number=255,
+        section="Schwere Pistolen",
+        headers=["WAFFE", "SCHADEN"],
+        rows=[["Ares Predator", "3K"]],
+    )
+    pages = [
+        PageContent(
+            page_number=255,
+            text="Pistolen sind handliche Feuerwaffen.",
+            headings=["Feuerwaffen", "Schwere Pistolen"],
+            tables=[table],
+        ),
+    ]
+    chunks = chunk_pages(pages, source_name="SR6", game_system="shadowrun6")
+    # Expect 1 text chunk + 1 table chunk
+    assert len(chunks) == 2
+
+    table_chunk = next(c for c in chunks if c.metadata.get("is_table") == "true")
+    assert table_chunk.metadata["content_type"] == "table"
+    assert table_chunk.metadata["page"] == 255
+    assert "Tabelle: Schwere Pistolen" in table_chunk.text
+    assert "| Ares Predator | 3K |" in table_chunk.text
+
+
+def test_chunk_table_preserves_headers():
+    """Large tables split into multiple chunks must preserve column headers in every chunk."""
+    headers = ["WAFFE", "SCHADEN", "PREIS"]
+    rows = [[f"Waffe {i}", f"{i}K", f"{i * 100} ¥"] for i in range(20)]
+    table = TableItem(
+        title="Waffenliste",
+        markdown="",
+        page_number=10,
+        headers=headers,
+        rows=rows,
+    )
+    chunks = _chunk_table(table, chunk_size=200)
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert "| WAFFE | SCHADEN | PREIS |" in chunk
+        assert "| --- | --- | --- |" in chunk

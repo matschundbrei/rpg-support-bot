@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 
 from rpg_bot.config import get_settings
-from rpg_bot.ingest.extract import PageContent
+from rpg_bot.ingest.extract import PageContent, TableItem
 
 
 @dataclass
@@ -26,6 +26,43 @@ def _build_breadcrumb(heading: str, source_name: str) -> str:
     if heading:
         return f"{source_name} > {heading}"
     return source_name
+
+
+def _chunk_table(table: TableItem, chunk_size: int) -> list[str]:
+    """Render and split a table into chunks respecting chunk_size while keeping headers."""
+    if not table.headers or not table.rows:
+        return [table.markdown] if table.markdown.strip() else []
+
+    header_md = (
+        "| "
+        + " | ".join(table.headers)
+        + " |\n| "
+        + " | ".join(["---"] * len(table.headers))
+        + " |"
+    )
+    title_prefix = f"### Tabelle: {table.title}\n" if table.title else ""
+
+    table_chunks: list[str] = []
+    current_rows: list[list[str]] = []
+
+    for row in table.rows:
+        clean_row = [str(c).replace("|", "/").replace("\n", " ").strip() for c in row]
+        current_rows.append(clean_row)
+
+        rendered_rows = "\n".join("| " + " | ".join(r) + " |" for r in current_rows)
+        candidate = f"{title_prefix}{header_md}\n{rendered_rows}"
+
+        if len(candidate) > chunk_size and len(current_rows) > 1:
+            last = current_rows.pop()
+            rendered_rows = "\n".join("| " + " | ".join(r) + " |" for r in current_rows)
+            table_chunks.append(f"{title_prefix}{header_md}\n{rendered_rows}")
+            current_rows = [last]
+
+    if current_rows:
+        rendered_rows = "\n".join("| " + " | ".join(r) + " |" for r in current_rows)
+        table_chunks.append(f"{title_prefix}{header_md}\n{rendered_rows}")
+
+    return table_chunks
 
 
 def _split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
@@ -170,6 +207,33 @@ def chunk_pages(
                             "language": language,
                             "section": section_heading,
                             "breadcrumb": breadcrumb,
+                            "content_type": "text",
+                            "is_table": "false",
+                        },
+                    )
+                )
+
+        # Process extracted tables into structured table chunks
+        for table in getattr(page, "tables", []):
+            table_title = table.title or fallback_heading or "Tabelle"
+            breadcrumb = _build_breadcrumb(f"Tabelle: {table_title}", source_name)
+            table_md_chunks = _chunk_table(table, chunk_size)
+
+            for t_chunk in table_md_chunks:
+                chunk_text = f"[{breadcrumb}]\n{t_chunk}"
+                all_chunks.append(
+                    Chunk(
+                        text=chunk_text,
+                        metadata={
+                            "source": source_name,
+                            "source_path": source_path,
+                            "page": page.page_number,
+                            "game_system": game_system,
+                            "language": language,
+                            "section": table.section or table_title,
+                            "breadcrumb": breadcrumb,
+                            "content_type": "table",
+                            "is_table": "true",
                         },
                     )
                 )

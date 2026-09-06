@@ -10,12 +10,13 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rpg_bot.config import get_settings
 from rpg_bot.embeddings import embed_texts
 from rpg_bot.ingest.chunker import chunk_pages
-from rpg_bot.ingest.extract import extract_pdf
+from rpg_bot.ingest.extract import PageContent, extract_pdf
 from rpg_bot.retrieval.store import VectorStore, get_store
 
 console = Console()
 
 EMBED_BATCH_SIZE = 16
+SUPPORTED_EXTENSIONS = {".pdf", ".md", ".txt"}
 
 
 def _file_hash(path: Path) -> str:
@@ -44,25 +45,46 @@ def _guess_game_system(path: Path) -> str:
     return ""
 
 
-def ingest_pdf(pdf_path: Path, store: VectorStore) -> int:
-    """Ingest a single PDF. Returns number of chunks added."""
-    file_hash = _file_hash(pdf_path)
+def extract_text_file(path: Path) -> list[PageContent]:
+    """Extract plain text or markdown files into PageContent."""
+    content = path.read_text(encoding="utf-8", errors="replace")
+    if not content.strip():
+        return []
+    headings: list[str] = []
+    for line in content.splitlines():
+        line_s = line.strip()
+        if line_s.startswith("#"):
+            heading = line_s.lstrip("#").strip()
+            if heading and heading not in headings:
+                headings.append(heading)
+    return [PageContent(page_number=1, text=content, headings=headings, tables=[])]
+
+
+def ingest_file(file_path: Path, store: VectorStore) -> int:
+    """Ingest a single document file (PDF, Markdown, or text). Returns number of chunks added."""
+    file_hash = _file_hash(file_path)
 
     if store.has_source(file_hash):
-        console.print(f"[dim]Skipping (already ingested): {pdf_path.name}[/dim]")
+        console.print(f"[dim]Skipping (already ingested): {file_path.name}[/dim]")
         return 0
 
-    source_name = pdf_path.stem
-    source_path = str(pdf_path.resolve())
-    game_system = _guess_game_system(pdf_path)
+    source_name = file_path.stem
+    source_path = str(file_path.resolve())
+    game_system = _guess_game_system(file_path)
 
-    console.print(f"[bold]Extracting:[/bold] {pdf_path.name}")
-    pages = extract_pdf(pdf_path)
+    console.print(f"[bold]Extracting:[/bold] {file_path.name}")
+    if file_path.suffix.lower() == ".pdf":
+        pages = extract_pdf(file_path)
+    elif file_path.suffix.lower() in [".md", ".txt"]:
+        pages = extract_text_file(file_path)
+    else:
+        return 0
+
     if not pages:
-        console.print(f"[yellow]No text extracted from {pdf_path.name}[/yellow]")
+        console.print(f"[yellow]No text extracted from {file_path.name}[/yellow]")
         return 0
 
-    console.print(f"  {len(pages)} pages extracted")
+    console.print(f"  {len(pages)} page(s) extracted")
 
     chunks = chunk_pages(
         pages, source_name=source_name, game_system=game_system, source_path=source_path
@@ -72,7 +94,7 @@ def ingest_pdf(pdf_path: Path, store: VectorStore) -> int:
     if not chunks:
         return 0
 
-    # Embed chunks in batches via LM Studio API
+    # Embed chunks in batches
     texts = [c.text for c in chunks]
 
     with Progress(
@@ -114,36 +136,48 @@ def ingest_pdf(pdf_path: Path, store: VectorStore) -> int:
     return len(chunks)
 
 
+# Backward-compatible alias
+ingest_pdf = ingest_file
+
+
 def ingest_sourcebooks(path: str | None = None) -> None:
-    """Scan sourcebooks directory (or specific path) and ingest new PDFs."""
+    """Scan sourcebooks directory (or specific path) and ingest new sourcebooks."""
     settings = get_settings()
     store = get_store()
 
     if path:
         target = Path(path)
-        if target.is_file() and target.suffix.lower() == ".pdf":
-            pdf_files = [target]
+        if target.is_file() and target.suffix.lower() in SUPPORTED_EXTENSIONS:
+            source_files = [target]
         elif target.is_dir():
-            pdf_files = sorted(target.rglob("*.pdf"))
+            source_files = sorted(
+                p
+                for p in target.rglob("*")
+                if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+            )
         else:
-            console.print(f"[red]Not a PDF file or directory: {target}[/red]")
+            console.print(f"[red]Not a supported sourcebook file or directory: {target}[/red]")
             return
     else:
         sb_path = settings.sourcebooks_path
         if not sb_path.exists():
             console.print(f"[red]Sourcebooks directory not found: {sb_path}[/red]")
-            console.print("Create it and add PDF files, then run ingest again.")
+            console.print("Create it and add PDF/Markdown files, then run ingest again.")
             return
-        pdf_files = sorted(sb_path.rglob("*.pdf"))
+        source_files = sorted(
+            p
+            for p in sb_path.rglob("*")
+            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+        )
 
-    if not pdf_files:
-        console.print("[yellow]No PDF files found.[/yellow]")
+    if not source_files:
+        console.print("[yellow]No supported sourcebook files found.[/yellow]")
         return
 
-    console.print(f"Found {len(pdf_files)} PDF file(s)\n")
+    console.print(f"Found {len(source_files)} sourcebook file(s)\n")
 
     total_chunks = 0
-    for pdf_path in pdf_files:
-        total_chunks += ingest_pdf(pdf_path, store)
+    for file_path in source_files:
+        total_chunks += ingest_file(file_path, store)
 
     console.print(f"\n[bold green]Done![/bold green] Total chunks in store: {store.count()}")

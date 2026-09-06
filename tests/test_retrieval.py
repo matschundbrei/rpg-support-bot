@@ -5,6 +5,7 @@ import pytest
 import rpg_bot.retrieval.query as query_module
 from rpg_bot.retrieval.query import (
     _reciprocal_rank_fusion,
+    _tokenize_query,
     create_query_fn,
     query_rag,
 )
@@ -207,3 +208,84 @@ def test_create_query_fn_none_on_empty_store(tmp_path, monkeypatch):
         )(),
     )
     assert create_query_fn() is None
+
+
+def test_tokenize_query_filters_filler_words():
+    """Conversational filler words should be removed for cleaner BM25 query terms."""
+    q_de = "Schau bitte mal, welche Handfeuerwaffe den größten Schaden macht."
+    tokens_de = _tokenize_query(q_de)
+    assert "handfeuerwaffe" in tokens_de
+    assert "schaden" in tokens_de
+    assert "schau" not in tokens_de
+    assert "bitte" not in tokens_de
+    assert "macht" not in tokens_de
+
+    q_en = "Please tell me what the best weapon damage is"
+    tokens_en = _tokenize_query(q_en)
+    assert "weapon" in tokens_en
+    assert "damage" in tokens_en
+    assert "please" not in tokens_en
+    assert "tell" not in tokens_en
+
+
+def test_query_rag_balanced_retrieval_includes_tables(store, monkeypatch):
+    """Balanced retrieval should include relevant table chunks with [Tabelle] tag."""
+    # Text chunk
+    store.add(
+        ids=["doc_text"],
+        documents=[
+            "[SR6 > Feuerwaffen]\nFeuerwaffen wie Pistolen und Gewehre sind weit verbreitet."
+        ],
+        embeddings=[[0.1] * 384],
+        metadatas=[
+            {
+                "source": "SR6",
+                "page": 252,
+                "source_path": "/tmp/sr6.pdf",
+                "game_system": "shadowrun6",
+                "language": "de",
+                "section": "Feuerwaffen",
+                "breadcrumb": "SR6 > Feuerwaffen",
+                "content_type": "text",
+                "is_table": "false",
+            }
+        ],
+    )
+    # Table chunk
+    store.add(
+        ids=["doc_table"],
+        documents=[
+            "[SR6 > Tabelle: Schwere Pistolen]\n"
+            "### Tabelle: Schwere Pistolen\n"
+            "| WAFFE | SCHADEN |\n"
+            "| --- | --- |\n"
+            "| Ares Predator VI | 3K |"
+        ],
+        embeddings=[[0.12] * 384],
+        metadatas=[
+            {
+                "source": "SR6",
+                "page": 255,
+                "source_path": "/tmp/sr6.pdf",
+                "game_system": "shadowrun6",
+                "language": "de",
+                "section": "Schwere Pistolen",
+                "breadcrumb": "SR6 > Tabelle: Schwere Pistolen",
+                "content_type": "table",
+                "is_table": "true",
+            }
+        ],
+    )
+
+    fake_settings = types.SimpleNamespace(
+        retrieval=types.SimpleNamespace(top_k=4, relevance_threshold=1.0),
+    )
+    monkeypatch.setattr(query_module, "get_settings", lambda: fake_settings)
+    monkeypatch.setattr(query_module, "embed_query", lambda q: [0.1] * 384)
+    monkeypatch.setattr(query_module, "get_store", lambda: store)
+
+    res = query_rag("Pistolen Schaden", game_system="shadowrun6")
+    assert res is not None
+    assert "[Tabelle]" in res.context
+    assert "Ares Predator VI" in res.context
+    assert "SR6, p.255" in res.source_map
